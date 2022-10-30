@@ -86,10 +86,9 @@ class Filtering:
 
     def external_artifact_rejection(self):
         self.raw.load_data()
-        self.raw = self.highpass()
         self.raw = self.notch()
-        self.raw = self.lowpass()
-        filt_raw = self.resample()
+        filt_raw = self.bandpass()
+        # filt_raw = self.resample()
         return filt_raw
     
 class Indepndent_Component_Analysis:
