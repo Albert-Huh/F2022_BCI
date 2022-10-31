@@ -1,3 +1,9 @@
+'''
+F2022 BCI Course Term-Project
+ErrP Group 3
+Authors: Heeyong Huh, Hyonyoung Shin, Susmita Gangopadhyay
+'''
+
 # Search in data   
 import os
 import numpy as np 
@@ -14,7 +20,7 @@ offline_files = []
 
 for root, dirs, files in os.walk(data_dir):
     for file in files:
-        if file.endswith(".gdf"):
+        if file.endswith(".vhdr"):
             data_files.append(os.path.join(root, file))
             
             if 'offline' in root:
@@ -23,7 +29,7 @@ for root, dirs, files in os.walk(data_dir):
 print("Offline files detected")
 print(offline_files)
                 
-toy_data = 'test_bva.vhdr'
+toy_data = data_files[1]
 
 # initilize epoch and event lists
 bv_epochs_list = []
@@ -33,12 +39,17 @@ events_list = []
 # raw = mne.io.read_raw_gdf(toy_data, eog=None, misc=None, stim_channel='auto', preload=True)
 raw = mne.io.read_raw_brainvision(toy_data, preload=True)
 eeg_channels = mne.pick_types(raw.info, eeg=True)
+
+events = mne.events_from_annotations(raw, event_id='auto')
+
+# reference
+
 raw = raw.copy().filter(l_freq=1, h_freq=50)
 print(raw.info)
 raw.plot(duration=60, order=eeg_channels, n_channels=len(eeg_channels),
          remove_dc=True, block=True)
-
-
+spectrum = raw.compute_psd()
+spectrum.plot(average=True, block=True)
 
 # ############### IMPORT DATA & SIGNAL PROCESSING ###############
 # for file_name in raw_data_list:
