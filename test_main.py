@@ -30,10 +30,47 @@ raw = mne.io.read_raw_brainvision(raw_path_list[0])
 # raw = raw.filter(1,50)
 raw.load_data()
 raw.set_eeg_reference('average') 
+
 filters = preprocessing.Filtering(raw, l_freq=1, h_freq=50)
 raw = filters.external_artifact_rejection()
-
 print(raw.info)
-fig = raw.plot(block=True)
-events, event_dict = mne.events_from_annotations(raw, event_id='auto')
+# fig = raw.plot(block=True)
+onset = raw.annotations.onset
+duration = raw.annotations.duration
+description = raw.annotations.description
+print(description)
+new_description = []
+for i in range(len(description)):
+        if description[i] == 'Stimulus/10':
+                new_description.append('Error trial')
+        elif description[i] == 'Stimulus/13':
+                new_description.append('Correct trial & Target reached')
+        elif description[i] == 'Stimulus/9':
+                new_description.append('Correct trial')
+        elif description[i] == 'Stimulus/16':
+                new_description.append('Blank screen')
+        elif description[i] == 'Stimulus/8':
+                new_description.append('Create target')
+        else:
+                new_description.append(description[i])
+print(new_description)
+my_annot = mne.Annotations(onset=onset, duration=duration, description=new_description)
+raw.set_annotations(my_annot)
+
+custom_dict = {'Error trial': 10, 'Correct trial & Target reached': 13, 'Correct trial': 9}
+events, event_dict = mne.events_from_annotations(raw, event_id=custom_dict)
+print(events)
+print(event_dict)
 fig = mne.viz.plot_events(events, event_id=event_dict, sfreq=raw.info['sfreq'], first_samp=raw.first_samp)
+
+epochs = mne.Epochs(raw, events, event_id=event_dict, tmin=-0.2, tmax=0.5, preload=True, picks='eeg')
+correct = epochs['Correct trial & Target reached', 'Correct trial'].average()
+error = epochs['Error trial'].average()
+
+for evk in (correct, error):
+        # global field power and spatial plot
+        evk.plot(gfp=True, spatial_colors=True, ylim=dict(eeg=[-4, 4]))
+        # spatial plot + topomap
+        evk.plot_joint()
+evokeds = dict(correct_epochs=list(correct), visual=list(error))
+mne.viz.plot_compare_evokeds(evokeds, legend='upper left', show_sensors='upper right')
