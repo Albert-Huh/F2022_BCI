@@ -64,13 +64,25 @@ print(event_dict)
 fig = mne.viz.plot_events(events, event_id=event_dict, sfreq=raw.info['sfreq'], first_samp=raw.first_samp)
 
 epochs = mne.Epochs(raw, events, event_id=event_dict, tmin=-0.2, tmax=0.5, preload=True, picks='eeg')
+epochs_fcz = mne.Epochs(raw, events, event_id=event_dict, tmin=-0.2, tmax=0.5, preload=True, picks='FCZ')
 correct = epochs['Correct trial & Target reached', 'Correct trial'].average()
 error = epochs['Error trial'].average()
 
+correct_fcz = epochs['Correct trial & Target reached', 'Correct trial'].average()
+error_fcz = epochs['Error trial'].average()
+
+fig1 = correct_fcz.plot()
+fig2 = error_fcz.plot(spatial_colors=True)
+
 for evk in (correct, error):
         # global field power and spatial plot
-        evk.plot(gfp=True, spatial_colors=True, ylim=dict(eeg=[-4, 4]))
+        evk.plot(gfp=False, spatial_colors=True, ylim=dict(eeg=[-4, 4]))
+evokeds = dict(corr=correct, err=error)
+mne.viz.plot_compare_evokeds(evokeds, picks='FCZ', combine='mean')
         # spatial plot + topomap
-        evk.plot_joint()
-evokeds = dict(correct_epochs=list(correct), visual=list(error))
-mne.viz.plot_compare_evokeds(evokeds, legend='upper left', show_sensors='upper right')
+        # evk.plot_joint()
+# evokeds = dict(correct_epochs=list(correct), visual=list(error))
+# mne.viz.plot_compare_evokeds(evokeds, legend='upper left', show_sensors='upper right')
+
+# times = np.arange(0.05, 0.151, 0.02)
+# evoked.plot_topomap(times, ch_type='mag')
