@@ -15,14 +15,14 @@ class Filtering:
         self.h_freq = h_freq
         self.nf_freqs = nf_freqs
 
-    def highpass(self, cutoff_freq=None, filt_type='fir', iir_params=None,
+    def highpass(self, cutoff_freq=None, filt_type='fir', phase='zero',iir_params=None,
         show_filt_params = False, verbose='warning'):
         
         if cutoff_freq == None:
             cutoff_freq = self.l_freq
         filt_raw = self.raw.filter(
             l_freq=cutoff_freq, h_freq=None, picks=self.picks, method=filt_type,
-            iir_params=iir_params, verbose=verbose)
+            phase=phase, iir_params=iir_params, verbose=verbose)
         if show_filt_params == True:
             # check the filter parameter
             filter_params = mne.filter.create_filter(
@@ -31,30 +31,28 @@ class Filtering:
             mne.viz.plot_filter(h=filter_params, sfreq=self.sfreq, flim=(0.01, self.sfreq/2))
         return filt_raw
 
-    def lowpass(self, cutoff_freq=None, filt_type='fir', iir_params=None, 
+    def lowpass(self, cutoff_freq=None, filt_type='fir', phase='zero', iir_params=None, 
         show_filt_params = False, verbose='warning'):
         
         if cutoff_freq == None:
             cutoff_freq = self.h_freq
         filt_raw = self.raw.filter(
-            l_freq=None, h_freq=cutoff_freq, picks=self.picks, method=filt_type,
-            iir_params=iir_params, verbose=verbose)
+            l_freq=None, h_freq=cutoff_freq, picks=self.picks, method=filt_type,phase=phase,            iir_params=iir_params, verbose=verbose)
         if show_filt_params == True:
             # check the filter parameter
             filter_params = mne.filter.create_filter(
                 data=self.raw.get_data(), sfreq=self.sfreq, l_freq=cutoff_freq, 
-                h_freq=None, method=filt_type, iir_params=iir_params)
+                h_freq=None, method=filt_type, phase=phase,  iir_params=iir_params)
             mne.viz.plot_filter(h=filter_params, sfreq=self.sfreq, flim=(0.01, self.sfreq/2))
         return filt_raw
 
-    def notch(self, target_freqs=None, notch_wdith=None, filt_type='fir', 
-        iir_params=None, verbose='warning'):
+    def notch(self, target_freqs=None, notch_wdith=None, filt_type='fir', phase='zero', iir_params=None, verbose='warning'):
         
         if target_freqs == None:
             target_freqs = self.nf_freqs
         filt_raw = self.raw.notch_filter(
             freqs=target_freqs, picks=self.picks,
-            method=filt_type, iir_params=iir_params, verbose=verbose)
+            method=filt_type, phase=phase, iir_params=iir_params, verbose=verbose)
         return filt_raw
 
     def resample(self,new_sfreq=None, window='boxcar', events=None, verbose='warning'):
@@ -68,14 +66,11 @@ class Filtering:
             npad='auto', window=window, events=events, verbose=verbose)
         return filt_raw
 
-    def bandpass(self, cutoff_freq=None, filt_type='fir', iir_params=None,
-        show_filt_params = False, verbose='warning'):
-
+    def bandpass(self, cutoff_freq=None, filt_type='fir', phase='zero', iir_params=None, show_filt_params=False, verbose='warning'):
         if cutoff_freq == None:
             cutoff_freq = [self.l_freq, self.h_freq]
         filt_raw = self.raw.filter(
-            l_freq=cutoff_freq[0], h_freq=cutoff_freq[1], picks=self.picks, method=filt_type,
-            iir_params=iir_params, verbose=verbose)
+            l_freq=cutoff_freq[0], h_freq=cutoff_freq[1], picks=self.picks, method=filt_type, phase=phase, iir_params=iir_params, verbose=verbose)
         if show_filt_params == True:
             # check the filter parameter
             filter_params = mne.filter.create_filter(
@@ -100,7 +95,7 @@ class Indepndent_Component_Analysis:
         self.random_state = seed
         self.max_iter = max_iter
         self.find_eog_peaks = find_eog_peaks
-        self.find_ecg_peaks = find_ecg_peaks    
+        self.find_ecg_peaks = find_ecg_peaks  
         self.ica = mne.preprocessing.ICA(n_components=n_components, random_state=seed, 
             max_iter= max_iter)
         self.eog_evoked = None
