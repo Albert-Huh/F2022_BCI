@@ -58,7 +58,7 @@ for file_name in raw_path_list:
         raw.set_eeg_reference('average') # CAR
         # fig = raw.plot_sensors(show_names=True)
 
-        filters = preprocessing.Filtering(raw, l_freq=5, h_freq=15)
+        filters = preprocessing.Filtering(raw, l_freq=2, h_freq=10)
         raw = filters.external_artifact_rejection()
         print(raw.info)
         # fig = raw.plot(block=True)
@@ -90,7 +90,7 @@ for file_name in raw_path_list:
         # print(event_dict)
         # fig = mne.viz.plot_events(events, event_id=event_dict, sfreq=raw.info['sfreq'], first_samp=raw.first_samp)
 
-        epochs = mne.Epochs(raw, events, event_id=event_dict, tmin=-0.2, tmax=0.5, preload=True, picks='eeg')
+        epochs = mne.Epochs(raw, events, event_id=event_dict, tmin=-0.5, tmax=0.5, baseline=(-0.5, 0), preload=True, picks='eeg')
         correct = epochs['Correct trial & Target reached', 'Correct trial']
         error = epochs['Error trial']
         # correct = epochs['Correct trial & Target reached', 'Correct trial'].average()
