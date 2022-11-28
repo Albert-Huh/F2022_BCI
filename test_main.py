@@ -12,6 +12,8 @@ import mne
 import preprocessing
 import feature_extraction
 
+from sklearn.cross_decomposition import CCA
+
 # import data
 subject_num = input("Subject number: ")
 electrode_type = ['Gel', 'POLiTAG'][int(input("Electrode type (Gel [0] or POLiTAG [1]): "))]
@@ -100,19 +102,33 @@ print('len of epochs are', len(correct_epochs[0]) + len(correct_epochs[1]) + len
 print('len of epochs are', len(all_correct))
 
 all_error = mne.concatenate_epochs(error_epochs)
+# average evoked potential over trais over all channels
 correct_evoked = all_correct.average()
 error_evoked = all_error.average()
 
+### CCA ###
 X_correct = np.concatenate(all_correct.get_data(),axis=1)
 X_error = np.concatenate(all_error.get_data(),axis=1)
+Y_correct = np.tile(correct_evoked.get_data(picks=['FCz', 'FC1', 'FC2', 'Cz', 'Fz']),(1,len(all_correct.get_data())))
+Y_error = np.tile(error_evoked.get_data(picks=['FCz', 'FC1', 'FC2', 'Cz', 'Fz']),(1,len(all_error.get_data())))
+print(X_correct.shape)
+print(X_error.shape)
+print(Y_correct.shape)
+print(Y_error.shape)
+X = np.append(X_correct, X_error, axis=1).transpose()
+Y = np.append(Y_correct, Y_error, axis=1).transpose()
+print(X.shape)
+print(Y.shape)
+cca = CCA(n_components=5)
+cca.fit(X, Y)
+W_s = cca.x_rotations_
+print(W_s.shape)
+print(W_s)
+
+
 '''
 print(type(all_correct.get_data()), type(all_error.get_data()), type(correct_evoked.get_data()), type(error_evoked.get_data()))
 print(len(all_correct.get_data()), len(all_error.get_data()), len(correct_evoked.get_data()), len(error_evoked.get_data()))
-print(len(all_correct.get_data()))
-print(len(all_correct.get_data()[0]))
-print(len(all_correct.get_data()[0][0]))
-print(len(correct_evoked.get_data()))
-print(len(correct_evoked.get_data()[0]))
 
 print(np.concatenate(all_correct.get_data(),axis=1).shape)
 print(np.concatenate(all_correct.get_data(),axis=1)[0:4])
