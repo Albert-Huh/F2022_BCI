@@ -177,7 +177,8 @@ for subj_ind in range(n_subject):
             pipe_LDA = make_pipeline(StandardScaler(), LinearDiscriminantAnalysis(solver="lsqr", covariance_estimator=oa))
             pipe_LDA.fit(X_train, Y_train)
 
-
+            # TODO: need some debugging
+            
             # Train set performance 
             Y_pred_train = pipe_LDA.predict(X_train)
             train_acc = accuracy_score(Y_train, Y_pred_train)
@@ -187,9 +188,9 @@ for subj_ind in range(n_subject):
             print(confusion_matrix(Y_train, Y_pred_train))
             print('Classification Report:')
             print(classification_report(Y_train, Y_pred_train, target_names=event_dict.keys()))
+            
             # Test set performance
             Y_pred_test = pipe_LDA.predict(X_test)
-            # Assess the results
             test_acc = accuracy_score(Y_test, Y_pred_test)
             print('Test Set Performance: Linear Discriminant Analysis')
             print('Accuracy score: {}'.format(test_acc))
