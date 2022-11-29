@@ -63,7 +63,6 @@ epochs_car_err = []
 
 for file_name in raw_path_list:
         ### 2.1 import raw data ###
-        
         # load raw data
         raw = mne.io.read_raw_brainvision(file_name,preload=True)
         print(raw.info) # check raw data info
