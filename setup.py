@@ -1,105 +1,94 @@
-import sys
 import os
-from sqlite3 import Row
-import numpy as np
-from datetime import datetime, date, time, timedelta
-import matplotlib
-import matplotlib.pyplot as plt
-import read_nback_report as nback
-import read_hrt_report as hrt
-
 import mne
-matplotlib.use('TkAgg')
 
-class Setup:
-    def __init__(self, raw_path=None, montage_path=None, mode=None):
-        if mode == 'Binary':
-            self.raw = mne.io.read_raw_fif(raw_path)
-        else:
-            self.raw = mne.io.read_raw_brainvision(raw_path)
-        self.montage = mne.channels.read_custom_montage(montage_path)
-        self.mode = mode # 'Binary', 'Brainvision' 'Dual'
-        self.raw.set_channel_types({'EOG':'eog'})
-        if mode == 'Dual':
-            self.bv_raw = self.raw.copy().pick_channels(['Fp1','Fp2','Fz','F3','F4','F7','F8','Cz','C3','C4','T7','T8','Pz','P3','P4','P7','P8','O1','O2','EOG'])
-            self.et_raw = self.raw.copy().pick_channels(['Fp1_ET','Fp2_ET','F7_ET','F8_ET','A1','A2','EOG'])
-            new_names = dict(
-                (ch_name,
-                ch_name.replace('_ET', ''))
-                for ch_name in self.et_raw.ch_names)
-            self.et_raw.rename_channels(new_names)
+def get_file_paths(data_dir: str, n_subject: int, n_electrode_type: int):
+    # nested list: [subj] [electode_type] 
+    offline_files = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
+    online1_files = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
+    online2_files = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
+    online_files = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
 
-            self.bv_raw.set_montage(self.montage)
-            # fig = self.bv_raw.plot_sensors(show_names=True)
-            # et_montage = self.montage.copy()
-            # self.et_raw.set_montage(et_montage)
-            # fig = self.et_raw.plot_sensors(show_names=True, block=True)
-        elif mode == 'E-tattoo':
-            self.et_raw = self.raw.copy().pick_channels(['Fp1','Fp2','F7','F8','A1','EOG'])
-        elif mode == 'Brainvision':
-            self.raw.set_montage(self.montage)
-            # pass
+    # Categorize input files 
+    for root, dirs, files in os.walk(data_dir):
+        for file in files:
+            if file.endswith(".vhdr"):
+                subj_ind = int(file.split("_")[0]) - 6
 
-    def get_brainvision_raw(self):
-        self.bv_raw = self.raw.copy().pick_channels(['Fp1','Fp2','Fz','F3','F4','F7','F8','Cz','C3','C4','T7','T8','Pz','P3','P4','P7','P8','O1','O2','EOG'])
-        self.bv_raw.set_montage(self.montage)
-        # fig = self.bv_raw.plot_sensors(show_names=True)
+                if "_rest" in root:
+                    continue
+                if 'Gel' in root:
+                    electrode_type_ind = 0
+                elif 'POLiTAG' in root:
+                    electrode_type_ind = 1
+                assert electrode_type_ind in [0, 1]
+                
+                if 'offline' in root:
+                    offline_files[subj_ind][electrode_type_ind].append(os.path.join(root, file))
+                elif 'online_S1' in root:
+                    online1_files[subj_ind][electrode_type_ind].append(os.path.join(root, file))
+                elif 'online_S2' in root:
+                    online2_files[subj_ind][electrode_type_ind].append(os.path.join(root, file))
 
-    def get_e_tattoo_raw(self):
-        self.et_raw = self.raw.copy().pick_channels(['Fp1_ET','Fp2_ET','F7_ET','F8_ET','A1','A2','EOG'])
-        new_names = dict(
-            (ch_name,
-            ch_name.replace('_ET', ''))
-            for ch_name in self.et_raw.ch_names)
-        self.et_raw.rename_channels(new_names)
-        # fig = self.et_raw.plot_sensors(show_names=True, block=True)
-        
-    def get_annotation_info(self):
-        onset = self.raw.annotations.onset
-        duration = self.raw.annotations.duration
-        description = self.raw.annotations.description
-        return onset, duration, description
+    # Input parsing sanity check
+    for subj_ind in range(n_subject):
+        print("Subject number " + str(subj_ind+6))
+        for electrode_type_ind in range(n_electrode_type):
+            online_files[subj_ind][electrode_type_ind] = online1_files[subj_ind][electrode_type_ind] + online2_files[subj_ind][electrode_type_ind] # concatenate
+        print(str(len(offline_files[subj_ind][0])) + " offline Gel files found")
+        print(str(len(offline_files[subj_ind][1])) + " offline POLITAG files found")
+        print(str(len(online_files[subj_ind][0])) + " online Gel files found")
+        print(str(len(online_files[subj_ind][1])) + " online POLITAG files found")
 
-    def set_annotation(self, raw, onset, duration, description):
-        my_annot = mne.Annotations(onset=onset, duration=duration, description=description)
-        raw.set_annotations(my_annot)
+    return offline_files, online1_files, online2_files, online_files
 
-    def annotate_interactively(self):
-        fig = self.raw.plot()
-        fig.fake_keypress('a')
-        plt.show()
-        interactive_annot = self.raw.annotations
-        return interactive_annot
+def load_raw_data(path, montage, electrode_type='Gel'):
+    # load raw data
+    raw = mne.io.read_raw_brainvision(path,preload=True)
+    print(raw.info) # check raw data info
 
-    def get_events_from_annot(self, custom_mapping='auto'):
-        events, event_dict = mne.events_from_annotations(self.raw, event_id=custom_mapping)
-        print(event_dict)
-        print(events)
-        return events, event_dict
+    # replace some channel names for MNE functions
+    if electrode_type == 'Gel':
+        new_names = dict((ch_name, ch_name.replace('Z', 'z').replace('FP','Fp'))for ch_name in raw.ch_names)
+        raw.rename_channels(new_names)
+    else:
+        pass
 
-    def get_events_from_raw(self, stim_channel=None):
-        events = mne.find_events(self.raw, stim_channel=stim_channel)
-        return events
+    # set montage
+    raw.set_montage(montage)
+    # fig = raw.plot_sensors(show_names=True) # display existing ch loc on topomap
 
-    def get_events_from_nback_report(self, report_path, fs):
-        lines = nback.read_report_txt(report_path)
-        key_string_list = nback.get_key_string()
-        nback_report = nback.get_report_data(lines, key_string_list)
-        meas_isodate = datetime.fromisoformat(str(self.raw.info['meas_date']))
-        # fs = self.raw.info['sfreq']
-        samplestamp_tdel = nback.get_stim_time_delta(nback_report, meas_isodate, fs)
-        nback_event = nback.get_nback_event(nback_report, samplestamp_tdel, fs)
-        return nback_event
+    return raw
 
-    def get_events_from_hrt_report(self, report_path, fs):
-        lines = hrt.read_report_txt(report_path)
-        key_string_list = hrt.get_key_string()
-        hrt_report = hrt.get_report_data(lines, key_string_list)
-        meas_isodate = datetime.fromisoformat(str(self.raw.info['meas_date']))
-        # fs = self.raw.info['sfreq']
-        start_samplestamp_tdel, end_samplestamp_tdel = hrt.get_stim_time_delta(hrt_report, meas_isodate, fs)
-        hrt_events = hrt.get_hrt_event(hrt_report, start_samplestamp_tdel, end_samplestamp_tdel, fs,5)
-        return hrt_events
+def create_events(raw):
+    # get MNE annotations from raw data
+    onset = raw.annotations.onset
+    duration = raw.annotations.duration
+    description = raw.annotations.description
 
-# event visiualization
-# fig = mne.viz.plot_events(events_from_annot, event_id=event_dict, sfreq=raw.info['sfreq'], first_samp=raw.first_samp)
+    # renaming decriptions
+    new_description = []
+    for i in range(len(description)):
+            if description[i] == 'Stimulus/10':
+                    new_description.append('Error trial')
+            elif description[i] == 'Stimulus/13':
+                    new_description.append('Correct trial & Target reached')
+            elif description[i] == 'Stimulus/9':
+                    new_description.append('Correct trial')
+            elif description[i] == 'Stimulus/16':
+                    new_description.append('Blank screen')
+            elif description[i] == 'Stimulus/8':
+                    new_description.append('Create target')
+            else:
+                    new_description.append(description[i])
+    
+    # create new annotations
+    my_annot = mne.Annotations(onset=onset, duration=duration, description=new_description)
+    # set new annotations
+    raw.set_annotations(my_annot)
+
+    # create custom MNE events dictionary
+    custom_dict = {'Error trial': 10, 'Correct trial & Target reached': 13, 'Correct trial': 9}
+    # choose needed annotations and convert them to events
+    events, event_dict = mne.events_from_annotations(raw, event_id=custom_dict)
+
+    return events, event_dict
