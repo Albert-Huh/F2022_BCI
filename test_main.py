@@ -14,9 +14,12 @@ import feature_extraction
 
 from sklearn.cross_decomposition import CCA
 
-# import data
+###### 1 Initialization ######
+# get subject number
 subject_num = input("Subject number: ")
+# get electrode type
 electrode_type = ['Gel', 'POLiTAG'][int(input("Electrode type (Gel [0] or POLiTAG [1]): "))]
+# get session type
 session_type = input("Session (offline [0], online_S1 [1], online_S2 [2]): ")
 if session_type == '0':
         session = 'offline'
@@ -25,47 +28,72 @@ elif session_type == '1':
 elif session_type == '2':
         session = 'online_S2'
 
+# get list of file pathes
 raw_data_list = os.listdir(os.path.join(os.getcwd(), 'ErrP_data'))
 data_name = subject_num + '_' + electrode_type
 for data_folder in raw_data_list:
     if data_folder.startswith(data_name):
         raw_offline_folder = os.path.join(os.getcwd(), 'ErrP_data', data_folder, session)
         raw_run_list = os.listdir(raw_offline_folder)
-
-montage = mne.channels.make_standard_montage('standard_1020')
 raw_path_list = []
 for run in raw_run_list:
         if run.endswith('training'):
                 raw_path_list.append(os.path.join(raw_offline_folder, run, run+'.vhdr'))
+# print(raw_path_list) # debugging pathes
 
+# get international 10-20 montage
+montage = mne.channels.make_standard_montage('standard_1020')
+
+###### 2 Load Data ######
+# epoch initialization
+epochs = []
 correct_epochs = []
 error_epochs = []
-print(raw_path_list)
 
-
+# get preprocessing setup
+spat_filt = int(input("Spatial filtering setups (None [0], CAR [1], CCA [2], CAR+CCA [3]): "))
 
 for file_name in raw_path_list:
+        ### 2.1 import raw data ###
+        
+        # load raw data
         raw = mne.io.read_raw_brainvision(file_name)
+        print(raw.info) # check raw data info
 
-        # raw = raw.filter(1,50)
-        raw.load_data()
-        new_names = dict(
-                (ch_name,
-                ch_name.replace('Z', 'z').replace('FP','Fp'))
-                for ch_name in raw.ch_names)
+        # raw = raw.filter(1,50) # in case you want to see a filtered raw
+        # raw.load_data() # display raw run data
+        
+        # replace some channel names for MNE functions
+        new_names = dict((ch_name, ch_name.replace('Z', 'z').replace('FP','Fp'))for ch_name in raw.ch_names)
         raw.rename_channels(new_names)
-        raw.set_montage(montage)
-        raw.set_eeg_reference('average') # CAR
-        # fig = raw.plot_sensors(show_names=True)
 
+        # set montage
+        raw.set_montage(montage)
+        # fig = raw.plot_sensors(show_names=True) # display existing ch loc on topomap
+
+        ### 2.2 preprocessing ###
+
+        # apply bandpass filter (temporal filtering)
         filters = preprocessing.Filtering(raw, l_freq=2, h_freq=10)
         raw = filters.external_artifact_rejection()
-        print(raw.info)
+
+        # apply spatial filters
+        
+        if spat_filt == 1:
+                # common average reference (CAR)
+                raw = raw.copy().set_eeg_reference('average')
+        
         # fig = raw.plot(block=True)
+        # print(raw.info) # check preprocessed raw info
+
+        ### 2.3 epoch creation ###
+        # get MNE annotations from raw data
         onset = raw.annotations.onset
         duration = raw.annotations.duration
         description = raw.annotations.description
-        # print(description)
+        # print(description) # check existing discriptions
+
+        # renaming decriptions
         new_description = []
         for i in range(len(description)):
                 if description[i] == 'Stimulus/10':
@@ -80,71 +108,71 @@ for file_name in raw_path_list:
                         new_description.append('Create target')
                 else:
                         new_description.append(description[i])
-        # print(new_description)
+        # print(new_description) # check new discriptions
+        
+        # create new annotations
         my_annot = mne.Annotations(onset=onset, duration=duration, description=new_description)
+        # set new annotations
         raw.set_annotations(my_annot)
 
+        # create custom MNE events dictionary
         custom_dict = {'Error trial': 10, 'Correct trial & Target reached': 13, 'Correct trial': 9}
+        # choose needed annotations and convert them to events
         events, event_dict = mne.events_from_annotations(raw, event_id=custom_dict)
-        # print(events)
-        # print(event_dict)
-        # fig = mne.viz.plot_events(events, event_id=event_dict, sfreq=raw.info['sfreq'], first_samp=raw.first_samp)
 
-        epochs = mne.Epochs(raw, events, event_id=event_dict, tmin=-0.5, tmax=0.5, baseline=(-0.5, 0), preload=True, picks='eeg')
-        correct = epochs['Correct trial & Target reached', 'Correct trial']
-        error = epochs['Error trial']
-        # correct = epochs['Correct trial & Target reached', 'Correct trial'].average()
-        # error = epochs['Error trial'].average()
+        # print(events) # check events np array
+        # print(event_dict) # check custum events dict
+        # fig = mne.viz.plot_events(events, event_id=event_dict, sfreq=raw.info['sfreq'], first_samp=raw.first_samp) # visualize events
+
+        # create epochs from MNE raw and events
+        epoc = mne.Epochs(raw, events, event_id=event_dict, tmin=-0.5, tmax=0.5, baseline=(-0.5, 0), preload=True, picks='eeg')
+
+        # creat epochs for only correct and error trials
+        correct = epoc['Correct trial & Target reached', 'Correct trial']
+        error = epoc['Error trial']
+
+        # append epoch lists
+        epochs.append(epoc)
         correct_epochs.append(correct)
         error_epochs.append(error)
-all_correct = mne.concatenate_epochs(correct_epochs)
-print('len of epochs are', len(correct_epochs[0]) + len(correct_epochs[1]) + len(correct_epochs[2]))
-print('len of epochs are', len(all_correct))
 
+# concatenate epoch from differnt runs into a single epoch 
+all_epochs = mne.concatenate_epochs(epochs)
+all_correct = mne.concatenate_epochs(correct_epochs)
 all_error = mne.concatenate_epochs(error_epochs)
-# average evoked potential over trais over all channels
+
+# average evoked potential over all trials
 correct_evoked = all_correct.average()
 error_evoked = all_error.average()
 
-### CCA ###
-X_correct = np.concatenate(all_correct.get_data(),axis=1)
-X_error = np.concatenate(all_error.get_data(),axis=1)
-Y_correct = np.tile(correct_evoked.get_data(picks=['FCz', 'FC1', 'FC2', 'Cz', 'Fz']),(1,len(all_correct.get_data())))
-Y_error = np.tile(error_evoked.get_data(picks=['FCz', 'FC1', 'FC2', 'Cz', 'Fz']),(1,len(all_error.get_data())))
-print(X_correct.shape)
-print(X_error.shape)
-print(Y_correct.shape)
-print(Y_error.shape)
-X = np.append(X_correct, X_error, axis=1).transpose()
-Y = np.append(Y_correct, Y_error, axis=1).transpose()
-print(X.shape)
-print(Y.shape)
-cca = CCA(n_components=5)
-cca.fit(X, Y)
-W_s = cca.x_rotations_
-print(W_s.shape)
-print(W_s)
+## canonical correlation analysis (CCA) ##
+if spat_filt == 2:
+        # get input X (13 ch, (n epochs*n sample))
+        X_correct = np.concatenate(all_correct.get_data(),axis=1)
+        X_error = np.concatenate(all_error.get_data(),axis=1)
+        X = np.append(X_correct, X_error, axis=1).transpose()
+        # get desired ref Y (5 central ch, (n epochs*n sample))
+        Y_correct = np.tile(correct_evoked.get_data(picks=['FCz', 'FC1', 'FC2', 'Cz', 'Fz']),(1,len(all_correct.get_data())))
+        Y_error = np.tile(error_evoked.get_data(picks=['FCz', 'FC1', 'FC2', 'Cz', 'Fz']),(1,len(all_error.get_data())))
+        Y = np.append(Y_correct, Y_error, axis=1).transpose()
+        '''
+        # debug X Y shapes
+        print(X_correct.shape)
+        print(X_error.shape)
+        print(Y_correct.shape)
+        print(Y_error.shape)
+        print(X.shape)
+        print(Y.shape)
+        '''
+        # apply CCA
+        cca = CCA(n_components=5)
+        cca.fit(X, Y)
+        
+        # get CCA spatial filters
+        W_s = cca.x_rotations_
+        print(W_s.shape)
+        print(W_s)
 
-
-'''
-print(type(all_correct.get_data()), type(all_error.get_data()), type(correct_evoked.get_data()), type(error_evoked.get_data()))
-print(len(all_correct.get_data()), len(all_error.get_data()), len(correct_evoked.get_data()), len(error_evoked.get_data()))
-
-print(np.concatenate(all_correct.get_data(),axis=1).shape)
-print(np.concatenate(all_correct.get_data(),axis=1)[0:4])
-print(np.tile(correct_evoked.get_data(),(1,len(all_correct.get_data()))).shape)
-print(np.tile(correct_evoked.get_data(),(1,len(all_correct.get_data())))[0:4])
-
-print(np.concatenate(all_correct.get_data(),axis=1)[0][0])
-print(np.concatenate(all_correct.get_data(),axis=1)[0][359])
-print(np.concatenate(all_correct.get_data(),axis=1)[0][718])
-print(np.tile(correct_evoked.get_data(),(1,len(all_correct.get_data())))[0][0])
-print(np.tile(correct_evoked.get_data(),(1,len(all_correct.get_data())))[0][359])
-print(np.tile(correct_evoked.get_data(),(1,len(all_correct.get_data())))[0][718])
-'''
-# for evk in (correct_evoked, error_evoked):
-#         # global field power and spatial plot
-#         evk.plot(gfp=False, spatial_colors=True, ylim=dict(eeg=[-4, 4]))
 time_unit = dict(time_unit="s")
 correct_evoked.plot_joint(title="Average Evoked for Correct", picks='eeg',ts_args=time_unit, topomap_args=time_unit)
 error_evoked.plot_joint(title="Average Evoked for ErrP", picks='eeg',ts_args=time_unit, topomap_args=time_unit)  # show difference wave
