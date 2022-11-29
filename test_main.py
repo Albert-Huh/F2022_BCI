@@ -343,12 +343,15 @@ mne.viz.plot_compare_evokeds(evokeds, picks='Fz', combine='mean')
 mne.viz.plot_compare_evokeds(evokeds, picks=['FCz', 'FC1', 'FC2', 'Cz', 'Fz'], combine='mean')
 
 ###### 4 Feature Selection ######
-### 4.1 4-fold cross-validation ###
-folds = epochs # (n_run,)
-print(folds[0].shape)
-# y = epochs.events[:,2]
-# print(y.shape)
-
-# all_epochs = mne.concatenate_epochs(epochs)
-# all_correct = mne.concatenate_epochs(epochs_corr)
-# all_error = mne.concatenate_epochs(epochs_err)
+### 4.1 3-fold cross-validation ###
+temp = []
+temp2 = []
+for run in epochs:
+        fold = run.get_data()
+        temp.append(fold)
+        case = run.events[:,2]
+        temp2.append(case)
+folds = np.array(temp)
+y = np.array(temp2)
+print(folds.shape) # (n_fold, n_epoch, n_chs, n_sample)
+print(y.shape) # (n_fold, n_epoch)
