@@ -203,21 +203,21 @@ def vhdr2numpy(filename, politag: bool, spatial_filter: str, t_epoch):
         print(str(len(correct)) + " correct trials detected in this run.")
         print(str(len(error)) + " error trials detected in this run.") 
 
-        print(epoc.ch_names)
-        x = epoc.get_data()
+    print(epoc.ch_names)
+    x = epoc.get_data()
 
-        feature_names = []
-        assert x.shape[1] == len(epoc.ch_names)
-        for ch in range(x.shape[1]):
-            for sample in range(x.shape[2]):
-                feature_names.append(str(epoc.ch_names[ch]) + "_" + str(sample))
+    feature_names = []
+    assert x.shape[1] == len(epoc.ch_names)
+    for ch in range(x.shape[1]):
+        for sample in range(x.shape[2]):
+            feature_names.append(str(epoc.ch_names[ch]) + "_" + str(sample))
 
-        x = np.reshape(x, (x.shape[0], x.shape[1]*x.shape[2]))  # trials * (channels*samples)
-        
-        y = epoc.events[:, 2]
-        y = [1 if yy in [9, 13] else 0 for yy in y]  # make labels binary
+    x = np.reshape(x, (x.shape[0], x.shape[1]*x.shape[2]))  # trials * (channels*samples)
+    
+    y = epoc.events[:, 2]
+    y = [1 if yy in [9, 13] else 0 for yy in y]  # make labels binary
 
-        return x, y, feature_names
+    return x, y, feature_names
         
 
 classify = True
