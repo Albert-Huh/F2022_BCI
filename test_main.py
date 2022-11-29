@@ -150,7 +150,7 @@ for file_name in raw_path_list:
         epochs_car_err.append(error_car)
 
 
-# concatenate epoch from differnt runs into a single epoch 
+# concatenate epoch from differnt runs into a single epoch (for plotting grand avg stuff)
 all_epochs = mne.concatenate_epochs(epochs)
 all_correct = mne.concatenate_epochs(epochs_corr)
 all_error = mne.concatenate_epochs(epochs_err)

@@ -3,41 +3,107 @@ F2022 BCI Course Term-Project
 ErrP Group 3
 Authors: Heeyong Huh, Hyonyoung Shin, Susmita Gangopadhyay
 '''
-
-# Search in data   
+  
 import os
 import numpy as np 
-import sys 
-from matplotlib import pyplot as plt
 import mne 
-import preprocessing 
+import preprocessing
 
-
+# Define data directory
 data_dir = 'C:/Users/mcvai/F2022_BCI/ErrP_data'
 
-data_files = []
 offline_files = [] 
+online1_files = [] 
+online2_files = []
+all_files = [] 
 
 for root, dirs, files in os.walk(data_dir):
     for file in files:
         if file.endswith(".vhdr"):
-            data_files.append(os.path.join(root, file))
+            all_files.append(os.path.join(root, file))
             
             if 'offline' in root:
                 offline_files.append(os.path.join(root, file))
-                
-print("Offline files detected")
+
+            elif 'online_S1' in root:
+                online1_files.append(os.path.join(root, file))
+
+            elif 'online_S2' in root:
+                online2_files.append(os.path.join(root, file))
+            
+online_files = [online1_files, online2_files] # concatenate 
+                       
+print(str(len(offline_files)) + " offline files found: ")
 print(offline_files)
-                
-toy_data = data_files[1]
+print(str(len(online_files)) + " online files found: ")
+print(online_files)
 
-# initilize epoch and event lists
-bv_epochs_list = []
-et_epochs_list = []
-events_list = []
+data = offline_files[1]
 
-# raw = mne.io.read_raw_gdf(toy_data, eog=None, misc=None, stim_channel='auto', preload=True)
-raw = mne.io.read_raw_brainvision(toy_data, preload=True)
+raw = mne.io.read_raw_brainvision(data, preload=True)
+new_names = dict(
+                (ch_name,
+                ch_name.replace('Z', 'z').replace('FP','Fp'))
+                for ch_name in raw.ch_names)
+
+print("Channel name conversion: ")
+print(raw.ch_names)
+print("has been changed to ")
+print(new_names)
+
+raw.rename_channels(new_names)
+montage = mne.channels.make_standard_montage('standard_1020')
+raw.set_montage(montage)
+raw.set_eeg_reference('average') # CAR
+# fig = raw.plot_sensors(show_names=True)
+
+filters = preprocessing.Filtering(raw, l_freq=2, h_freq=10)
+raw = filters.external_artifact_rejection()
+print(raw.info)
+# fig = raw.plot(block=True)
+onset = raw.annotations.onset
+duration = raw.annotations.duration
+description = raw.annotations.description
+print("onset:")
+print(onset)
+print("duration:")
+print(duration)
+print("description:")
+print(description)
+
+new_description = []
+for i in range(len(description)):
+    if description[i] == 'Stimulus/10':
+        new_description.append('Error trial')
+    elif description[i] == 'Stimulus/13':
+        new_description.append('Correct trial & Target reached')
+    elif description[i] == 'Stimulus/9':
+        new_description.append('Correct trial')
+    elif description[i] == 'Stimulus/16':
+        new_description.append('Blank screen')
+    elif description[i] == 'Stimulus/8':
+        new_description.append('Create target')
+    else:
+        new_description.append(description[i])
+
+    my_annot = mne.Annotations(onset=onset, duration=duration, description=new_description)
+    raw.set_annotations(my_annot)
+
+    custom_dict = {'Error trial': 10, 'Correct trial & Target reached': 13, 'Correct trial': 9}
+    events, event_dict = mne.events_from_annotations(raw, event_id=custom_dict)
+    # print(events)
+    # print(event_dict)
+    # fig = mne.viz.plot_events(events, event_id=event_dict, sfreq=raw.info['sfreq'], first_samp=raw.first_samp)
+
+    epochs = mne.Epochs(raw, events, event_id=event_dict, tmin=-0.5, tmax=0.5, baseline=(-0.5, 0), preload=True, picks='eeg')
+    correct = epochs['Correct trial & Target reached', 'Correct trial']
+    error = epochs['Error trial']
+    # correct = epochs['Correct trial & Target reached', 'Correct trial'].average()
+    # error = epochs['Error trial'].average()
+    correct_epochs.append(correct)
+    error_epochs.append(error)
+
+
 eeg_channels = mne.pick_types(raw.info, eeg=True)
 
 events = mne.events_from_annotations(raw, event_id='auto')
