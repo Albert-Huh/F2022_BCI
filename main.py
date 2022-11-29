@@ -17,7 +17,22 @@ from matplotlib import pyplot as plt
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
 from sklearn.svm import SVC
+
+# Classifier learning packages
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.covariance import OAS
+from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.gaussian_process.kernels import RBF
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import f1_score
 from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import FunctionTransformer
 
 ###### 1 Initialization ######
 # define data directory
@@ -126,42 +141,102 @@ for subj_ind in range(n_subject):
         evokeds = dict(corr=grand_avg_corr, err=grand_avg_err)
         mne.viz.plot_compare_evokeds(evokeds, picks='Fz', combine='mean')
         mne.viz.plot_compare_evokeds(evokeds, picks=['FCz', 'FC1', 'FC2', 'Cz', 'Fz'], combine='mean')
-'''
-        ### 2.6 create training data ###
-        temp = []
-        temp2 = []
 
+        ### 2.6 create training data ###
+        # 3-fold cross validation
         for test_fold in epochs:
-            train_folds = [i for i in epochs if i != test_fold] # use all other runs to train 
+            train_epochs = [i for i in epochs if i != test_fold] # use all other runs to train
             # print(test_run, train_runs)
 
-            xs = []; Y_train = []
-            for train_fold in train_folds: 
-                x, y, f = vhdr2numpy(offline_files[subj][electrode_type][train_run], False, 'CCA', [-0.5, 0.5])
-                # print(x.shape)
-                # print(y)
-                # print(len(y))
-                xs.append(x) 
-                Y_train = Y_train + y
+            # xs = []; Y_train = []
 
-            for run_epoch in epochs:
-                    fold = run_epoch.get_data()
-                    temp.append(fold)
-                    case = run_epoch.events[:,2]
-                    temp2.append(case)
-            folds = np.array(temp)
-            y = np.array(temp2)
-            print(folds.shape) # (n_fold, n_epoch, n_chs, n_sample)
-            print(y.shape) # (n_fold, n_epoch)   
-        
-        x = epoc.get_data()
-        feature_names = []
-        assert x.shape[1] == len(epoc.ch_names)
-        for ch in range(x.shape[1]):
-            for sample in range(x.shape[2]):
-                feature_names.append(str(epoc.ch_names[ch]) + "_" + str(sample))
+            train_folds = mne.concatenate_epochs(train_epochs) # use all other runs to train
+            X_train = train_folds.get_data()
+            X_train = X_train.reshape(X_train.shape[0], -1)
+            print(X_train.shape)
 
-        x = np.reshape(x, (x.shape[0], x.shape[1]*x.shape[2]))  # trials * (channels*samples)
-        y = epoc.events[:, 2]
-        y = [1 if yy in [9, 13] else 0 for yy in y]  # make labels binary
+            Y_train = train_folds.events[:, 2]
+            Y_train[Y_train==10] = 0
+            Y_train[Y_train!=10] = 1
+            # y = [1 if yy in [9, 13] else 0 for yy in y]  # make labels binary 0: err, 1: corr
+            print(Y_train.shape)
+
+            X_test = test_fold.get_data()
+            X_test = X_test.reshape(X_test.shape[0], -1)
+            print(X_test.shape)
+
+            Y_test = test_fold.events[:, 2]
+            Y_test[Y_test==10] = 0
+            Y_test[Y_test!=10] = 1
+            # y = [1 if yy in [9, 13] else 0 for yy in y]  # make labels binary 0: err, 1: corr
+            print(Y_test.shape)
+
+            ############### Linear discriminant analysis
+            oa = OAS(store_precision=False, assume_centered=False)
+            # pipe_LDA = make_pipeline(FunctionTransformer(feature_extraction.eeg_power_band, validate=False), LinearDiscriminantAnalysis(solver="lsqr", covariance_estimator=oa))
+            pipe_LDA = make_pipeline(StandardScaler(), LinearDiscriminantAnalysis(solver="lsqr", covariance_estimator=oa))
+            pipe_LDA.fit(X_train, Y_train)
+
+
+            # Train set performance 
+            Y_pred_train = pipe_LDA.predict(X_train)
+            train_acc = accuracy_score(Y_train, Y_pred_train)
+            print('Train Set Performance: Linear Discriminant Analysis')
+            print('Accuracy score: {}'.format(train_acc))
+            print('Confusion Matrix:')
+            print(confusion_matrix(Y_train, Y_pred_train))
+            print('Classification Report:')
+            print(classification_report(Y_train, Y_pred_train, target_names=event_dict.keys()))
+            # Test set performance
+            Y_pred_test = pipe_LDA.predict(X_test)
+            # Assess the results
+            test_acc = accuracy_score(Y_test, Y_pred_test)
+            print('Test Set Performance: Linear Discriminant Analysis')
+            print('Accuracy score: {}'.format(test_acc))
+            print('Confusion Matrix:')
+            print(confusion_matrix(Y_test, Y_pred_test))
+            print('Classification Report:')
+            print(classification_report(Y_test, Y_pred_test, target_names=event_dict.keys()))
+
+
+'''
+#SVM
+C_range = np.logspace(-2, 10, 13)
+gamma_range = np.logspace(-9, 3, 13)
+opt_C_gamma_param = []
+acc_max = 0
+opt_Y_pred = []
+for C_gamma_param in [(x, y) for x in C_range for y in gamma_range]:
+    pipe_SVM = make_pipeline(StandardScaler(), SVC(kernel='rbf',C=C_gamma_param[0],gamma=C_gamma_param[1]))
+    pipe_SVM.fit(bv_X_train, Y_train)
+    # Test
+    Y_pred = pipe_SVM.predict(bv_X_test)
+    acc = accuracy_score(Y_test, Y_pred)
+    f1 = f1_score(Y_test, Y_pred, average='weighted', labels=np.unique(Y_pred))
+    if acc_max < acc and f1 > 0.0:
+        acc_max = acc
+        opt_C_gamma_param = C_gamma_param
+        opt_Y_pred = Y_pred
+
+print('BV SVM Classifier')
+print(opt_C_gamma_param)
+print('Accuracy score: {}'.format(acc_max))
+print('Confusion Matrix:')
+print(confusion_matrix(Y_test, opt_Y_pred))
+print('Classification Report:')
+print(classification_report(Y_test, opt_Y_pred, target_names=event_dict.keys()))
+
+            X_train = np.vstack(xs)
+            X_train = pd.DataFrame(data=X_train, columns=f)
+            Y_train = pd.DataFrame(data=Y_train)
+
+            X_test, Y_test, f = vhdr2numpy(offline_files[subj][electrode_type][test_run], False, 'CCA', [-0.5, 0.5])
+            X_test = pd.DataFrame(data=X_test, columns=f)
+            Y_test = pd.DataFrame(data=Y_test)
+
+            scaler = StandardScaler()  # normalization: zero mean, unit variance
+            scaler.fit(X_train)  # scaling factor determined from the training set
+            X_train = scaler.transform(X_train)
+            X_test = scaler.transform(X_test)  # apply the same scaling to the test set 
+
 '''
