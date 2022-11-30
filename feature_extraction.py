@@ -55,7 +55,7 @@ def eeg_power_band(epochs, mean = False):
         #             psds_band = psds[n,:, (freqs >= fmin) & (freqs < fmax)].mean(axis=-1)
         #             print(psds_band.shape)
         #         X.append(psds_band.reshape(psds.shape, -1))
-        return np.concatenate(X, axis=-1)\
+        return np.concatenate(X, axis=-1)
 
 def create_train_test_sets(X, Y, test_portion):
     X_train = []

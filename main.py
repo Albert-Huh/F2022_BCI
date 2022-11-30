@@ -52,24 +52,23 @@ plt.rcParams.update({'font.size': 20})
 print('Start offline analysis: ')
 plotting = int(input("subject plotting mode (yes [0], no [1]: "))
 if plotting == 0:
-    n_subject = 3
-    n_electrode_type = 2
+    n_subject = 1
+    n_electrode_type = 1
 
 print(offline_files[0][0])
 for subj_ind in range(n_subject):
     subject_num = subj_ind+6
     print('Subject number: ' + str(subject_num))
 
-    # TODO: Implement POLiTAG import
-    for electrode_type_ind in range(1): # 11/29/2022 using gel only for now 
+    for electrode_type_ind in range(n_electrode_type): 
         electrode_type = ['Gel','POLiTAG'][electrode_type_ind]
         print('Electrode type: ' + str(electrode_type))
 
         #### debuging
-        subj_ind = 0
-        electrode_type_ind = 1
-        electrode_type = ['Gel','POLiTAG'][electrode_type_ind]
-        ####
+        # subj_ind = 0
+        # electrode_type_ind = 1
+        # electrode_type = ['Gel','POLiTAG'][electrode_type_ind]
+        # ####
         n_run = len(offline_files[subj_ind][electrode_type_ind])
         runs = offline_files[subj_ind][electrode_type_ind]
 
@@ -132,7 +131,7 @@ for subj_ind in range(n_subject):
 
             ### 2.4 create epochs ###
             # create epochs from MNE events
-            
+              
             epoc = mne.Epochs(raw, events, event_id=event_dict, tmin=epoch_tmin, tmax=epoch_tmax, baseline=None, preload=True, picks='eeg')
 
             # creat epochs for only correct and error trials
@@ -240,22 +239,18 @@ for subj_ind in range(n_subject):
         fig = mne.viz.plot_compare_evokeds(dict(Traditional=diff_traditional,
                                                 Regression=diff_regression),
                                         title=title, **kwargs, combine='mean')    
-
-        effect_of_baseline = reg_model['baseline'].beta.get_data().mean(axis=1) #.squeeze()
-        print(effect_of_baseline)
-        print(effect_of_baseline.shape)
         
         # average evoked potential over all trials
         grand_avg_corr = all_correct.average()
         grand_avg_err = all_error.average()
 
         ### 2.5 analysis visulaization ###
-        freqs = np.logspace(*np.log10([2, 10]), num=160)
-        n_cycles = freqs / 2.  # different number of cycle per frequency
-        power, itc = mne.time_frequency.tfr_morlet(all_correct, freqs=freqs, n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=1, picks='eeg')
-        power.plot(baseline=(epoch_tmin, 0), combine='mean', mode='logratio', title='Correct Epoch Average Frontal Central Power')
-        power, itc = mne.time_frequency.tfr_morlet(all_error, freqs=freqs, n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=1, picks='eeg')
-        power.plot(baseline=(epoch_tmin, 0), combine='mean', mode='logratio', title='ErrP Epoch Average Frontal Central Power')
+        # freqs = np.logspace(*np.log10([2, 10]), num=160)
+        # n_cycles = freqs / 2.  # different number of cycle per frequency
+        # power, itc = mne.time_frequency.tfr_morlet(all_correct, freqs=freqs, n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=1, picks='eeg')
+        # power.plot(baseline=(epoch_tmin, 0), combine='mean', mode='logratio', title='Correct Epoch Average Frontal Central Power')
+        # power, itc = mne.time_frequency.tfr_morlet(all_error, freqs=freqs, n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=1, picks='eeg')
+        # power.plot(baseline=(epoch_tmin, 0), combine='mean', mode='logratio', title='ErrP Epoch Average Frontal Central Power')
 
         # grand average waveform + topoplot
         time_unit = dict(time_unit="s")
