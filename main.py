@@ -81,8 +81,8 @@ for subj_ind in range(n_subject):
             reg_base_on = True
         
         # temporal filter parameters
-        low_f_c = 2
-        high_f_c = 10
+        low_f_c = 1
+        high_f_c = 30
         epoch_tmin = -0.3
         epoch_tmax = 0.7
         n_cca_comp = 5
@@ -149,6 +149,7 @@ for subj_ind in range(n_subject):
         all_correct = mne.concatenate_epochs(epochs_corr)
         all_error = mne.concatenate_epochs(epochs_err)
         
+        fc_chs = ['FCz', 'FC1', 'FC2', 'Cz', 'Fz']
         baseline = (epoch_tmin, 0)
         if reg_base_on == False:
             all_correct = all_correct.apply_baseline(baseline)
@@ -156,7 +157,6 @@ for subj_ind in range(n_subject):
         else:
             corr_predictor = all_epochs.events[:, 2] != all_epochs.event_id['Error trial']
             err_predictor = all_epochs.events[:, 2] == all_epochs.event_id['Error trial']
-            fc_chs = ['FCz', 'FC1', 'FC2', 'Cz', 'Fz']
             baseline_predictor = (all_epochs.copy().crop(*baseline)
                     .pick_channels(fc_chs)
                     .get_data()     # convert to NumPy array
@@ -231,11 +231,33 @@ for subj_ind in range(n_subject):
         topo_kwargs = dict(vlim=(vmin, vmax), ch_type='eeg',
                         times=np.linspace(0.05, 0.45, 9))
 
-        fig = diff_traditional.plot_topomap(**topo_kwargs)
-        fig.suptitle("Traditional")
-        fig = diff_regression.plot_topomap(**topo_kwargs)
-        fig.suptitle("Regression-based")
-        title = "Difference in evoked potential (ErrP minus Correct)"
+
+        fig = plt.figure(constrained_layout=True)
+        fig.suptitle("Comparison of Potentials with Different Baseline Correction",fontsize=30)
+        # create 3x1 subfigs
+        subfigs = fig.subfigures(nrows=2, ncols=1)
+        subfig_titles = ["Traditional", "Regression-based"]
+        for row, subfig in enumerate(subfigs):
+            subfig.suptitle(subfig_titles[row],fontsize=25)
+            # create 1x10 subplots per subfig
+            axs = subfig.subplots(nrows=1, ncols=10, gridspec_kw={'width_ratios': [4,4,4,4,4,4,4,4,4,1]})
+            if row ==0:
+                diff_traditional.plot_topomap(**topo_kwargs,axes=axs,show=False)
+            else:
+                diff_regression.plot_topomap(**topo_kwargs,axes=axs,show=False)
+        plt.show()
+
+        # fig, axs = plt.subplots(nrows=2, ncols=10, gridspec_kw={'width_ratios': [3,3,3,3,3,3,3,3,3,1]})
+        # fig.suptitle("Comparison of Potentials with Different Baseline Correction",fontsize=30)
+        # diff_traditional.plot_topomap(**topo_kwargs,axes=axs[0,0:10],show=False)
+        # diff_regression.plot_topomap(**topo_kwargs,axes=axs[1,0:10],show=False)
+        # plt.show()
+
+        # fig = diff_traditional.plot_topomap(**topo_kwargs)
+        # fig.suptitle("Traditional")
+        # fig = diff_regression.plot_topomap(**topo_kwargs)
+        # fig.suptitle("Regression-based")
+        title = "Difference in Grand Average Potential (ErrP minus Correct)"
         fig = mne.viz.plot_compare_evokeds(dict(Traditional=diff_traditional,
                                                 Regression=diff_regression),
                                         title=title, **kwargs, combine='mean')    
@@ -245,29 +267,51 @@ for subj_ind in range(n_subject):
         grand_avg_err = all_error.average()
 
         ### 2.5 analysis visulaization ###
-        # freqs = np.logspace(*np.log10([2, 10]), num=160)
-        # n_cycles = freqs / 2.  # different number of cycle per frequency
-        # power, itc = mne.time_frequency.tfr_morlet(all_correct, freqs=freqs, n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=1, picks='eeg')
-        # power.plot(baseline=(epoch_tmin, 0), combine='mean', mode='logratio', title='Correct Epoch Average Frontal Central Power')
-        # power, itc = mne.time_frequency.tfr_morlet(all_error, freqs=freqs, n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=1, picks='eeg')
-        # power.plot(baseline=(epoch_tmin, 0), combine='mean', mode='logratio', title='ErrP Epoch Average Frontal Central Power')
+        freqs = np.logspace(*np.log10([1, 30]), num=160)
+        n_cycles = freqs / 2.  # different number of cycle per frequency
+        power, itc = mne.time_frequency.tfr_morlet(all_correct, freqs=freqs, n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=1, picks='eeg')
+        power.plot(baseline=(epoch_tmin, 0), combine='mean', mode='logratio', title='Correct Epoch Average Frontal Central Power')
+        power, itc = mne.time_frequency.tfr_morlet(all_error, freqs=freqs, n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=1, picks='eeg')
+        power.plot(baseline=(epoch_tmin, 0), combine='mean', mode='logratio', title='ErrP Epoch Average Frontal Central Power')
 
         # grand average waveform + topoplot
         time_unit = dict(time_unit="s")
         grand_avg_corr.plot_joint(title="Average Correct Potentials", picks='eeg',ts_args=time_unit, topomap_args=time_unit)
         grand_avg_err.plot_joint(title="Average ErrP", picks='eeg',ts_args=time_unit, topomap_args=time_unit)  # show difference wave
 
-        grand_avg_corr.plot(titles="Average Correct Potentials at Frontal Central Channels", picks=['FCz', 'FC1', 'FC2', 'Cz', 'Fz'],time_unit='s')
-        grand_avg_err.plot(titles="Average ErrP at Frontal Central Channels", picks=['FCz', 'FC1', 'FC2', 'Cz', 'Fz'],time_unit='s')  # show difference wave
+        grand_avg_corr.plot(titles="Average Correct Potentials at Frontal Central Channels", picks=fc_chs,time_unit='s',gfp=False)
+        grand_avg_err.plot(titles="Average ErrP at Frontal Central Channels", picks=fc_chs,time_unit='s',gfp=False)  # show difference wave
         
+        vmin = min(grand_avg_corr.get_data().min(),
+                grand_avg_err.get_data().min()) * 1e6
+        vmax = max(grand_avg_corr.get_data().max(),
+                grand_avg_err.get_data().max()) * 1e6
+        topo_kwargs = dict(vlim=(vmin, vmax), ch_type='eeg',
+                        times=np.linspace(0.05, 0.45, 9))
+
+        fig = plt.figure(constrained_layout=True)
+        fig.suptitle("Grand Average Potentials",fontsize=40)
+        # create 3x1 subfigs
+        subfigs = fig.subfigures(nrows=2, ncols=1)
+        subfig_titles = ["Correct", "ErrP"]
+        for row, subfig in enumerate(subfigs):
+            subfig.suptitle(subfig_titles[row],fontsize=25)
+            # create 1x10 subplots per subfig
+            axs = subfig.subplots(nrows=1, ncols=10, gridspec_kw={'width_ratios': [4,4,4,4,4,4,4,4,4,1]})
+            if row ==0:
+                grand_avg_corr.plot_topomap(**topo_kwargs,axes=axs,show=False)
+            else:
+                grand_avg_err.plot_topomap(**topo_kwargs,axes=axs,show=False)
+        plt.show()
+
         # evokeds = dict(Correct=grand_avg_corr, ErrP=grand_avg_err)
         evokeds = dict(Correct=list(all_correct.iter_evoked()),
                ErrP=list(all_error.iter_evoked()))
         mne.viz.plot_compare_evokeds(evokeds, picks='FCz', combine='mean')
-        mne.viz.plot_compare_evokeds(evokeds, picks=['FCz', 'FC1', 'FC2', 'Cz', 'Fz'], combine='mean')
+        mne.viz.plot_compare_evokeds(evokeds, picks=fc_chs, combine='mean')
 
+        '''
         ### 2.6 create training data ###
-        break
         # 3-fold cross validation
         for test_fold in epochs:
             train_epochs = [i for i in epochs if i != test_fold] # use all other runs to train
@@ -323,7 +367,7 @@ for subj_ind in range(n_subject):
             print(confusion_matrix(Y_test, Y_pred_test))
             print('Classification Report:')
             print(classification_report(Y_test, Y_pred_test, target_names=event_dict.keys()))
-
+        '''
 
 '''
 #SVM
