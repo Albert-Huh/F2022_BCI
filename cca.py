@@ -55,7 +55,7 @@ def canonical_correlation_analysis(run_paths, montage, preprocessing_param, car_
     Y = np.append(Y_correct, Y_error, axis=1).T
 
     # apply CCA
-    cca = CCA(n_components=n_comp)
+    cca = CCA(n_components=preprocessing_param['n_cca_comp'])
     cca.fit(X, Y)
 
     # get CCA spatial filters
@@ -65,10 +65,10 @@ def canonical_correlation_analysis(run_paths, montage, preprocessing_param, car_
 
     if show_components == True:
         # visulaize CCA components
-        fig, axs = plt.subplots(nrows=1, ncols=n_comp)
-        for i in range(n_comp-1):
+        fig, axs = plt.subplots(nrows=1, ncols=preprocessing_param['n_cca_comp'])
+        for i in range(preprocessing_param['n_cca_comp']-1):
                 mne.viz.plot_topomap(W_s.T[i], raw.info, axes=axs[i], size=3,vlim=(0, 1), show=False)
-        im, cn = mne.viz.plot_topomap(W_s.T[n_comp-1], raw.info, axes=axs[n_comp-1], size=3, vlim=(-1, 1), show=False)
+        im, cn = mne.viz.plot_topomap(W_s.T[preprocessing_param['n_cca_comp']-1], raw.info, axes=axs[preprocessing_param['n_cca_comp']-1], size=3, vlim=(-1, 1), show=False)
         cbar = plt.colorbar(im, ax=axs)
         tick_font_size = 22
         cbar.ax.tick_params(labelsize=tick_font_size)
