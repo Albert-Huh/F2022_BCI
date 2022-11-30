@@ -52,8 +52,8 @@ plt.rcParams.update({'font.size': 20})
 print('Start offline analysis: ')
 plotting = int(input("subject plotting mode (yes [0], no [1]: "))
 if plotting == 0:
-    n_subject = 1
-    n_electrode_type = 1
+    n_subject = 3
+    n_electrode_type = 2
 
 print(offline_files[0][0])
 for subj_ind in range(n_subject):
@@ -65,16 +65,28 @@ for subj_ind in range(n_subject):
         electrode_type = ['Gel','POLiTAG'][electrode_type_ind]
         print('Electrode type: ' + str(electrode_type))
 
+        #### debuging
+        subj_ind = 0
+        electrode_type_ind = 1
+        electrode_type = ['Gel','POLiTAG'][electrode_type_ind]
+        ####
         n_run = len(offline_files[subj_ind][electrode_type_ind])
         runs = offline_files[subj_ind][electrode_type_ind]
 
         ### 2.1 get preprocessing setup ###
+        # baseline correction paremeter
+        baseline_option = int(input("Spatial filtering setups (Traditional [0], Regression-based [1] : "))
+        if baseline_option==0:
+            reg_base_on = False
+        else:
+            reg_base_on = True
+        
         # temporal filter parameters
-        low_f_c = 1
-        high_f_c = 30
+        low_f_c = 2
+        high_f_c = 10
         epoch_tmin = -0.3
         epoch_tmax = 0.7
-        n_cca_comp = 3
+        n_cca_comp = 5
         preprocessing_param = {'low_f_c':low_f_c, 'high_f_c':high_f_c, 'epoch_tmin':epoch_tmin, 'epoch_tmax':epoch_tmax, 'n_cca_comp':n_cca_comp}
 
         # spatial filter parameters
@@ -86,7 +98,7 @@ for subj_ind in range(n_subject):
         if spat_filt==2 or spat_filt==3:
             cca_on = True
             # build CCA using all runs
-            W_s = cca.canonical_correlation_analysis(runs, montage, preprocessing_param, car_on=car_on, show_components=True)
+            W_s = cca.canonical_correlation_analysis(runs, montage, preprocessing_param, electrode_type=electrode_type, reg_base_on=reg_base_on, car_on=car_on, show_components=True)
             # choose representing CCA component as a sapatial filter
             cca_num = int(input("Choose CCA component: "))
             W_cca = W_s.T[cca_num]
@@ -98,10 +110,11 @@ for subj_ind in range(n_subject):
         epochs = []
         epochs_corr = []
         epochs_err = []
+        event_list = []
 
         for run in runs:
             ### 2.2 import raw data ###
-            raw = setup.load_raw_data(path=run, montage=montage)
+            raw = setup.load_raw_data(path=run, montage=montage, electrode_type=electrode_type)
 
             ### 2.3 preprocessing ###
             # apply notch (60, 120 Hz) and bandpass filter (1-30 Hz)
@@ -121,64 +134,7 @@ for subj_ind in range(n_subject):
             # create epochs from MNE events
             
             epoc = mne.Epochs(raw, events, event_id=event_dict, tmin=epoch_tmin, tmax=epoch_tmax, baseline=None, preload=True, picks='eeg')
-            
-            baseline = (epoch_tmin, 0)
-            trad_corr = epoc['Correct trial & Target reached', 'Correct trial'].average().apply_baseline(baseline)
-            trad_err = epoc['Error trial'].average().apply_baseline(baseline)
-            
-            corr_predictor = epoc.events[:, 2] != epoc.event_id['Error trial']
-            err_predictor = epoc.events[:, 2] == epoc.event_id['Error trial']
-            fc_chs = ['FCz', 'FC1', 'FC2', 'Cz', 'Fz']
-            baseline_predictor = (epoc.copy().crop(*baseline)
-                    .pick_channels(fc_chs)
-                    .get_data()     # convert to NumPy array
-                    .mean(axis=-1)  # average across timepoints
-                    .squeeze()      # only 1 channel, so remove singleton dimension
-                    .mean(axis=-1)  # average across channelss
-                    .squeeze()      # only 1 channel, so remove singleton dimension
-            )
-            baseline_predictor *= 1e6  # convert V → μV
 
-            design_matrix = np.vstack([corr_predictor,
-                           err_predictor,
-                           baseline_predictor,
-                           baseline_predictor * corr_predictor]).T
-            reg_model = mne.stats.linear_regression(epoc, design_matrix,
-                                        names=["Correct", "ErrP",
-                                               "baseline",
-                                               "baseline:Correct"])
-
-            effect_of_baseline = reg_model['baseline'].beta
-            effect_of_baseline.plot(picks=fc_chs, hline=[1.], units=dict(eeg=r'$\beta$ value'),
-                        titles=dict(eeg=fc_chs), selectable=False)
-
-            reg_aud = reg_model['Correct'].beta
-            reg_vis = reg_model['ErrP'].beta
-            kwargs = dict(picks=fc_chs, show_sensors=False, truncate_yaxis=False)
-            mne.viz.plot_compare_evokeds(dict(Correct=trad_corr, ErrP=trad_err),
-                                        title="Traditional", **kwargs, combine='mean')
-            mne.viz.plot_compare_evokeds(dict(Correct=reg_aud, ErrP=reg_vis),
-                                        title="Regression-based", **kwargs, combine='mean')
-
-            diff_traditional = mne.combine_evoked([trad_corr, trad_err], weights=[1, -1])
-            diff_regression = mne.combine_evoked([reg_aud, reg_vis], weights=[1, -1])
-            vmin = min(diff_traditional.get_data().min(),
-                    diff_regression.get_data().min()) * 1e6
-            vmax = max(diff_traditional.get_data().max(),
-                    diff_regression.get_data().max()) * 1e6
-            topo_kwargs = dict(vlim=(vmin, vmax), ch_type='eeg',
-                            times=np.linspace(0.05, 0.45, 9))
-
-            fig = diff_traditional.plot_topomap(**topo_kwargs)
-            fig.suptitle("Traditional")
-            fig = diff_regression.plot_topomap(**topo_kwargs)
-            fig.suptitle("Regression-based")
-            title = "Difference in evoked potential (ErrP minus Correct)"
-            fig = mne.viz.plot_compare_evokeds(dict(Traditional=diff_traditional,
-                                                    Regression=diff_regression),
-                                            title=title, **kwargs, combine='mean')
-
-            break
             # creat epochs for only correct and error trials
             correct = epoc['Correct trial & Target reached', 'Correct trial']
             error = epoc['Error trial']
@@ -187,19 +143,114 @@ for subj_ind in range(n_subject):
             epochs.append(epoc)
             epochs_corr.append(correct)
             epochs_err.append(error)
-        
+            event_list.append(events)
+
         # concatenate epoch from differnt runs into a single epoch (for plotting grand avg stuff)
         all_epochs = mne.concatenate_epochs(epochs)
         all_correct = mne.concatenate_epochs(epochs_corr)
         all_error = mne.concatenate_epochs(epochs_err)
+        
+        baseline = (epoch_tmin, 0)
+        if reg_base_on == False:
+            all_correct = all_correct.apply_baseline(baseline)
+            all_error = all_error.apply_baseline(baseline)
+        else:
+            corr_predictor = all_epochs.events[:, 2] != all_epochs.event_id['Error trial']
+            err_predictor = all_epochs.events[:, 2] == all_epochs.event_id['Error trial']
+            fc_chs = ['FCz', 'FC1', 'FC2', 'Cz', 'Fz']
+            baseline_predictor = (all_epochs.copy().crop(*baseline)
+                    .pick_channels(fc_chs)
+                    .get_data()     # convert to NumPy array
+                    .mean(axis=-1)  # average across timepoints
+                    .squeeze()      # only 1 channel, so remove singleton dimension
+                    .mean(axis=-1)  # average across channels
+                    .squeeze()      # only 1 channel, so remove singleton dimension
+            )
+            baseline_predictor *= 1e6  # convert V → μV
 
+            design_matrix = np.vstack([corr_predictor,
+                            err_predictor,
+                            baseline_predictor,
+                            baseline_predictor * corr_predictor]).T
+            reg_model = mne.stats.linear_regression(all_epochs, design_matrix,
+                                        names=["Correct", "ErrP",
+                                                "baseline",
+                                                "baseline:Correct"])
+            W_beta = reg_model['baseline'].beta.get_data() 
+            reg_all_epochs_list = []
+            for i in range(len(event_list)):
+                np_reg_epoc = epochs[i].get_data() * W_beta
+                reg_epoc = mne.EpochsArray(np_reg_epoc,raw.info, events=event_list[i], tmin=epoch_tmin, event_id=event_dict)
+                reg_all_epochs_list.append(reg_epoc)
+            reg_all_epochs = mne.concatenate_epochs(reg_all_epochs_list)
+            all_correct = reg_all_epochs['Correct trial & Target reached', 'Correct trial']
+            all_error = reg_all_epochs['Error trial']
+
+        # traditional vs regression-based baselines
+        trad_corr = all_epochs['Correct trial & Target reached', 'Correct trial'].average().apply_baseline(baseline)
+        trad_err = all_epochs['Error trial'].average().apply_baseline(baseline)
+        
+        corr_predictor = all_epochs.events[:, 2] != all_epochs.event_id['Error trial']
+        err_predictor = all_epochs.events[:, 2] == all_epochs.event_id['Error trial']
+        baseline_predictor = (all_epochs.copy().crop(*baseline)
+                .pick_channels(fc_chs)
+                .get_data()     # convert to NumPy array
+                .mean(axis=-1)  # average across timepoints
+                .squeeze()      # only 1 channel, so remove singleton dimension
+                .mean(axis=-1)  # average across channelss
+                .squeeze()      # only 1 channel, so remove singleton dimension
+        )
+        baseline_predictor *= 1e6  # convert V → μV
+
+        design_matrix = np.vstack([corr_predictor,
+                        err_predictor,
+                        baseline_predictor,
+                        baseline_predictor * corr_predictor]).T
+        reg_model = mne.stats.linear_regression(all_epochs, design_matrix,
+                                    names=["Correct", "ErrP",
+                                            "baseline",
+                                            "baseline:Correct"])
+
+        effect_of_baseline = reg_model['baseline'].beta
+        effect_of_baseline.plot(picks=fc_chs, hline=[1.], units=dict(eeg=r'$\beta$ value'),
+                    titles=dict(eeg=fc_chs), selectable=False)
+
+        reg_corr = reg_model['Correct'].beta
+        reg_err = reg_model['ErrP'].beta
+        kwargs = dict(picks=fc_chs, show_sensors=False, truncate_yaxis=False)
+        mne.viz.plot_compare_evokeds(dict(Correct=trad_corr, ErrP=trad_err),
+                                    title="Traditional", **kwargs, combine='mean')
+        mne.viz.plot_compare_evokeds(dict(Correct=reg_corr, ErrP=reg_err),
+                                    title="Regression-based", **kwargs, combine='mean')
+
+        diff_traditional = mne.combine_evoked([trad_corr, trad_err], weights=[1, -1])
+        diff_regression = mne.combine_evoked([reg_corr, reg_err], weights=[1, -1])
+        vmin = min(diff_traditional.get_data().min(),
+                diff_regression.get_data().min()) * 1e6
+        vmax = max(diff_traditional.get_data().max(),
+                diff_regression.get_data().max()) * 1e6
+        topo_kwargs = dict(vlim=(vmin, vmax), ch_type='eeg',
+                        times=np.linspace(0.05, 0.45, 9))
+
+        fig = diff_traditional.plot_topomap(**topo_kwargs)
+        fig.suptitle("Traditional")
+        fig = diff_regression.plot_topomap(**topo_kwargs)
+        fig.suptitle("Regression-based")
+        title = "Difference in evoked potential (ErrP minus Correct)"
+        fig = mne.viz.plot_compare_evokeds(dict(Traditional=diff_traditional,
+                                                Regression=diff_regression),
+                                        title=title, **kwargs, combine='mean')    
+
+        effect_of_baseline = reg_model['baseline'].beta.get_data().mean(axis=1) #.squeeze()
+        print(effect_of_baseline)
+        print(effect_of_baseline.shape)
+        
         # average evoked potential over all trials
         grand_avg_corr = all_correct.average()
         grand_avg_err = all_error.average()
 
         ### 2.5 analysis visulaization ###
-
-        freqs = np.logspace(*np.log10([1, 30]), num=160)
+        freqs = np.logspace(*np.log10([2, 10]), num=160)
         n_cycles = freqs / 2.  # different number of cycle per frequency
         power, itc = mne.time_frequency.tfr_morlet(all_correct, freqs=freqs, n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=1, picks='eeg')
         power.plot(baseline=(epoch_tmin, 0), combine='mean', mode='logratio', title='Correct Epoch Average Frontal Central Power')

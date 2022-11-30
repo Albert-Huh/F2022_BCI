@@ -5,15 +5,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.cross_decomposition import CCA
 
-def canonical_correlation_analysis(run_paths, montage, preprocessing_param, car_on=False, show_components=True):
+def canonical_correlation_analysis(run_paths, montage, preprocessing_param, electrode_type='Gel', reg_base_on=False, car_on=False, show_components=True):
     # epoch initialization
     epochs = []
     epochs_corr = []
     epochs_err = []
+    event_list = []
 
     for run in run_paths:
         #import raw data
-        raw = setup.load_raw_data(path=run, montage=montage)
+        raw = setup.load_raw_data(path=run, montage=montage, electrode_type=electrode_type)
 
         # apply notch (60, 120 Hz) and bandpass filter (1-40 Hz)
         filters = preprocessing.Filtering(raw, l_freq=preprocessing_param['low_f_c'], h_freq=preprocessing_param['high_f_c'])
@@ -25,7 +26,7 @@ def canonical_correlation_analysis(run_paths, montage, preprocessing_param, car_
 
         # create epochs from MNE events
         events, event_dict = setup.create_events(raw)
-        epoc = mne.Epochs(raw, events, event_id=event_dict, tmin=preprocessing_param['epoch_tmin'], tmax=preprocessing_param['epoch_tmax'], baseline=(preprocessing_param['epoch_tmin'], 0), preload=True, picks='eeg')
+        epoc = mne.Epochs(raw, events, event_id=event_dict, tmin=preprocessing_param['epoch_tmin'], tmax=preprocessing_param['epoch_tmax'], baseline=None, preload=True, picks='eeg')
 
         # creat epochs for only correct and error trials
         correct = epoc['Correct trial & Target reached', 'Correct trial']
@@ -34,11 +35,49 @@ def canonical_correlation_analysis(run_paths, montage, preprocessing_param, car_
         epochs.append(epoc)
         epochs_corr.append(correct)
         epochs_err.append(error)
-
+        event_list.append(events)
+        
     # concatenate epoch from differnt runs into a single epoch (for plotting grand avg stuff)
     all_epochs = mne.concatenate_epochs(epochs)
     all_correct = mne.concatenate_epochs(epochs_corr)
     all_error = mne.concatenate_epochs(epochs_err)
+    
+    # creat epochs for only correct and error trials
+    baseline = (preprocessing_param['epoch_tmin'], 0)
+    if reg_base_on == False:
+        all_correct = all_correct.apply_baseline(baseline)
+        all_error = all_error.apply_baseline(baseline)
+    else:
+        corr_predictor = all_epochs.events[:, 2] != all_epochs.event_id['Error trial']
+        err_predictor = all_epochs.events[:, 2] == all_epochs.event_id['Error trial']
+        fc_chs = ['FCz', 'FC1', 'FC2', 'Cz', 'Fz']
+        baseline_predictor = (all_epochs.copy().crop(*baseline)
+                .pick_channels(fc_chs)
+                .get_data()     # convert to NumPy array
+                .mean(axis=-1)  # average across timepoints
+                .squeeze()      # only 1 channel, so remove singleton dimension
+                .mean(axis=-1)  # average across channels
+                .squeeze()      # only 1 channel, so remove singleton dimension
+        )
+        baseline_predictor *= 1e6  # convert V → μV
+
+        design_matrix = np.vstack([corr_predictor,
+                        err_predictor,
+                        baseline_predictor,
+                        baseline_predictor * corr_predictor]).T
+        reg_model = mne.stats.linear_regression(all_epochs, design_matrix,
+                                    names=["Correct", "ErrP",
+                                            "baseline",
+                                            "baseline:Correct"])
+        W_beta = reg_model['baseline'].beta.get_data() 
+        reg_all_epochs_list = []
+        for i in range(len(event_list)):
+            np_reg_epoc = epochs[i].get_data() * W_beta
+            reg_epoc = mne.EpochsArray(np_reg_epoc,raw.info, events=event_list[i], tmin=preprocessing_param['epoch_tmin'], event_id=event_dict)
+            reg_all_epochs_list.append(reg_epoc)
+        reg_all_epochs = mne.concatenate_epochs(reg_all_epochs_list)
+        all_correct = reg_all_epochs['Correct trial & Target reached', 'Correct trial']
+        all_error = reg_all_epochs['Error trial']
 
     # average evoked potential over all trials
     grand_avg_corr = all_correct.average()

@@ -50,8 +50,14 @@ def load_raw_data(path, montage, electrode_type='Gel'):
     if electrode_type == 'Gel':
         new_names = dict((ch_name, ch_name.replace('Z', 'z').replace('FP','Fp'))for ch_name in raw.ch_names)
         raw.rename_channels(new_names)
+        print(raw.ch_names)
     else:
-        pass
+        wrong_ch_names = raw.ch_names
+        correct_ch_names = ['Fz', 'FC5', 'FC1', 'FC6', 'C3', 'Cz', 'C4', 'CP5', 'CP1', 'CP2', 'CP6', 'FCz', 'FC2']
+        # ['Fz', 'FC5', 'FC1', 'FC2', 'FC6', 'C3', 'Cz', 'C4', 'CP5', 'CP1', 'CP2', 'CP6', 'FCz']
+        new_names = dict(zip(wrong_ch_names, correct_ch_names))
+        raw.rename_channels(new_names)
+        print(raw.ch_names)
 
     # set montage
     raw.set_montage(montage)
