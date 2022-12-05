@@ -61,6 +61,8 @@ for subj_ind in range(n_subject):
     print('Subject number: ' + str(subject_num))
 
     for electrode_type_ind in range(n_electrode_type): 
+        if plotting == 1:
+            electrode_type_ind = 1
         electrode_type = ['Gel','POLiTAG'][electrode_type_ind]
         print('Electrode type: ' + str(electrode_type))
 
@@ -99,9 +101,9 @@ for subj_ind in range(n_subject):
             # build CCA using all runs
             W_s = cca.canonical_correlation_analysis(runs, montage, preprocessing_param, electrode_type=electrode_type, reg_base_on=reg_base_on, car_on=car_on, show_components=True)
             # choose representing CCA component as a sapatial filter
-            cca_num = int(input("Choose CCA component: "))
-            W_cca = W_s.T[cca_num]
-            print(W_cca) # check the filter weights
+            cca_num = list(input("Choose CCA components: ").split(','))
+            cca_num = [int(x) for x in cca_num]
+            # W_cca = W_s.T[cca_num]
         else:
             cca_on = False
 
@@ -126,6 +128,9 @@ for subj_ind in range(n_subject):
                 raw = raw.set_eeg_reference('average')
             if cca_on == True:
                 # apply CCA based spatial filter
+                W_cca = cca.combine_cca_components(W_s, cca_num, raw.info)
+                print(W_cca.shape)
+                print(W_cca) # check the filter weights
                 raw_cca = (raw.get_data().T * W_cca).T
                 raw = mne.io.RawArray(raw_cca,raw.info)
 

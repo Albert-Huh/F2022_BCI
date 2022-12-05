@@ -6,6 +6,12 @@ import matplotlib.pyplot as plt
 from sklearn.cross_decomposition import CCA
 
 def canonical_correlation_analysis(run_paths, montage, preprocessing_param, electrode_type='Gel', reg_base_on=False, car_on=False, show_components=True):
+    '''
+    run_paths = list of file pathes (str) for raw EEG data (Brain Vision)
+    montage = MNE montage file
+    preprocessing_param = dict {'low_f_c':low_f_c, 'high_f_c':high_f_c, 'epoch_tmin':epoch_tmin, 'epoch_tmax':epoch_tmax, 'n_cca_comp':n_cca_comp}
+    '''
+    
     # epoch initialization
     epochs = []
     epochs_corr = []
@@ -117,3 +123,28 @@ def canonical_correlation_analysis(run_paths, montage, preprocessing_param, elec
         plt.show()
 
     return W_s
+
+def combine_cca_components(Ws, comp_list, raw_info):
+    '''
+    Ws = CCA rotation matrix of X (data) [n_components, n_channels]
+
+    comp_list = cca component list
+    '''
+    W_cca = np.zeros(Ws.T[0].shape)
+    for ind in comp_list:
+        W_cca += Ws.T[ind]
+
+    fig, axs = plt.subplots(nrows=1, ncols=1)
+    im, cn = mne.viz.plot_topomap(W_cca, raw_info, axes=axs, size=3, vlim=(-1, 1), show=False)
+    cbar = plt.colorbar(im, ax=axs)
+    tick_font_size = 22
+    cbar.ax.tick_params(labelsize=tick_font_size)
+    cbar.set_label('Weight (A.U.)',fontsize=22)
+    plt.rcParams.update({'font.size': 20})
+    fig.suptitle('Combined CCA Component',fontsize=40)
+    plt.show()
+    return W_cca
+
+    
+
+
