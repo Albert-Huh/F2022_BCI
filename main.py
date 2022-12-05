@@ -67,149 +67,13 @@ if offline_analysis:
                 electrode_type_ind = 1
             electrode_type = ['Gel','POLiTAG'][electrode_type_ind]
             print('Electrode type: ' + str(electrode_type))
-
-<<<<<<< HEAD
-        ### 2.1 get preprocessing setup ###
-        # baseline correction paremeter
-        baseline_option = int(input("Baseline correction setups (Traditional [0], Regression-based [1] : "))
-        if baseline_option==0:
-            reg_base_on = False
-        else:
-            reg_base_on = True
-        
-        # temporal filter parameters
-        low_f_c = 4
-        high_f_c = 12
-        epoch_tmin = -0.3
-        epoch_tmax = 0.5
-        n_cca_comp = 5
-        preprocessing_param = {'low_f_c':low_f_c, 'high_f_c':high_f_c, 'epoch_tmin':epoch_tmin, 'epoch_tmax':epoch_tmax, 'n_cca_comp':n_cca_comp}
-        ch_picks = list(input("Choose importnat channels: ").replace(' ', '').split(','))
-        # spatial filter parameters
-        spat_filt = int(input("Spatial filtering setups (None [0], CAR [1], CCA [2], CAR+CCA [3]): "))
-        if spat_filt==1 or spat_filt==3:
-            car_on = True
-        else:
-            car_on = False
-        if spat_filt==2 or spat_filt==3:
-            cca_on = True
-            # build CCA using all runs
-            W_s = cca.canonical_correlation_analysis(runs, montage, preprocessing_param, ch_picks=ch_picks, electrode_type=electrode_type, reg_base_on=reg_base_on, car_on=car_on, show_components=True)
-            # choose representing CCA component as a sapatial filter
-            cca_num = list(input("Choose CCA components: ").split(','))
-            cca_num = [int(x) for x in cca_num]
-            # W_cca = W_s.T[cca_num]
-        else:
-            cca_on = False
-
-        # epoch initialization
-        epochs = []
-        epochs_corr = []
-        epochs_err = []
-        event_list = []
-
-        for run in runs:
-            ### 2.2 import raw data ###
-            raw = setup.load_raw_data(path=run, montage=montage, electrode_type=electrode_type)
-
-            ### 2.3 preprocessing ###
-            # apply notch (60, 120 Hz) and bandpass filter (1-30 Hz)
-            filters = preprocessing.Filtering(raw, l_freq=low_f_c, h_freq=high_f_c)
-            raw = filters.external_artifact_rejection()
-            events, event_dict = setup.create_events(raw)
-
-            if car_on == True:
-                # common average reference (CAR)
-                raw = raw.set_eeg_reference('average')
-            if cca_on == True:
-                # apply CCA based spatial filter
-                W_cca = cca.combine_cca_components(W_s, cca_num, raw.info)
-                print(W_cca.shape)
-                print(W_cca) # check the filter weights
-                raw_cca = (raw.get_data().T * W_cca).T
-                raw = mne.io.RawArray(raw_cca,raw.info)
-
-            ### 2.4 create epochs ###
-            # create epochs from MNE events
-              
-            epoc = mne.Epochs(raw, events, event_id=event_dict, tmin=epoch_tmin, tmax=epoch_tmax, baseline=None, preload=True, picks='eeg')
-
-            # creat epochs for only correct and error trials
-            correct = epoc['Correct trial & Target reached', 'Correct trial']
-            error = epoc['Error trial']
-
-            # append epoch lists
-            epochs.append(epoc)
-            epochs_corr.append(correct)
-            epochs_err.append(error)
-            event_list.append(events)
-
-        # concatenate epoch from differnt runs into a single epoch (for plotting grand avg stuff)
-        all_epochs = mne.concatenate_epochs(epochs)
-        all_correct = mne.concatenate_epochs(epochs_corr)
-        all_error = mne.concatenate_epochs(epochs_err)
-        
-        # ch_picks = ['FCz', 'FC1', 'FC2', 'Cz', 'Fz']
-        baseline = (epoch_tmin, 0)
-        if reg_base_on == False:
-            all_correct = all_correct.apply_baseline(baseline)
-            all_error = all_error.apply_baseline(baseline)
-        else:
-            corr_predictor = all_epochs.events[:, 2] != all_epochs.event_id['Error trial']
-            err_predictor = all_epochs.events[:, 2] == all_epochs.event_id['Error trial']
-            baseline_predictor = (all_epochs.copy().crop(*baseline)
-                    .pick_channels(ch_picks)
-                    .get_data()     # convert to NumPy array
-                    .mean(axis=-1)  # average across timepoints
-                    .squeeze()      # only 1 channel, so remove singleton dimension
-                    .mean(axis=-1)  # average across channels
-                    .squeeze()      # only 1 channel, so remove singleton dimension
-            )
-            baseline_predictor *= 1e6  # convert V → μV
-
-            design_matrix = np.vstack([corr_predictor,
-                            err_predictor,
-                            baseline_predictor,
-                            baseline_predictor * corr_predictor]).T
-            reg_model = mne.stats.linear_regression(all_epochs, design_matrix,
-                                        names=["Correct", "ErrP",
-                                                "baseline",
-                                                "baseline:Correct"])
-            W_beta = reg_model['baseline'].beta.get_data() 
-            reg_all_epochs_list = []
-            for i in range(len(event_list)):
-                np_reg_epoc = epochs[i].get_data() * W_beta
-                reg_epoc = mne.EpochsArray(np_reg_epoc,raw.info, events=event_list[i], tmin=epoch_tmin, event_id=event_dict)
-                reg_all_epochs_list.append(reg_epoc)
-            reg_all_epochs = mne.concatenate_epochs(reg_all_epochs_list)
-            all_correct = reg_all_epochs['Correct trial & Target reached', 'Correct trial']
-            all_error = reg_all_epochs['Error trial']
-
-        if reg_base_on == True:
-            # traditional vs regression-based baselines
-            trad_corr = all_epochs['Correct trial & Target reached', 'Correct trial'].average().apply_baseline(baseline)
-            trad_err = all_epochs['Error trial'].average().apply_baseline(baseline)
-            
-            corr_predictor = all_epochs.events[:, 2] != all_epochs.event_id['Error trial']
-            err_predictor = all_epochs.events[:, 2] == all_epochs.event_id['Error trial']
-            baseline_predictor = (all_epochs.copy().crop(*baseline)
-                    .pick_channels(ch_picks)
-                    .get_data()     # convert to NumPy array
-                    .mean(axis=-1)  # average across timepoints
-                    .squeeze()      # only 1 channel, so remove singleton dimension
-                    .mean(axis=-1)  # average across channelss
-                    .squeeze()      # only 1 channel, so remove singleton dimension
-            )
-            baseline_predictor *= 1e6  # convert V → μV
-=======
-            #### debugging
+            ### debugging
             # subj_ind = 0
             # electrode_type_ind = 1
             # electrode_type = ['Gel','POLiTAG'][electrode_type_ind]
             # ####
             n_run = len(offline_files[subj_ind][electrode_type_ind])
             runs = offline_files[subj_ind][electrode_type_ind]
-
             ### 2.1 get preprocessing setup ###
             # baseline correction paremeter
             baseline_option = int(input("Baseline correction setups (Traditional [0], Regression-based [1] : "))
@@ -225,8 +89,7 @@ if offline_analysis:
             epoch_tmax = 0.5
             n_cca_comp = 5
             preprocessing_param = {'low_f_c':low_f_c, 'high_f_c':high_f_c, 'epoch_tmin':epoch_tmin, 'epoch_tmax':epoch_tmax, 'n_cca_comp':n_cca_comp}
->>>>>>> 96351fb8c7b96984ae7a81fae459ad6003aebdcc
-
+            ch_picks = list(input("Choose importnat channels: ").replace(' ', '').split(','))
             # spatial filter parameters
             spat_filt = int(input("Spatial filtering setups (None [0], CAR [1], CCA [2], CAR+CCA [3]): "))
             if spat_filt==1 or spat_filt==3:
@@ -236,7 +99,7 @@ if offline_analysis:
             if spat_filt==2 or spat_filt==3:
                 cca_on = True
                 # build CCA using all runs
-                W_s = cca.canonical_correlation_analysis(runs, montage, preprocessing_param, electrode_type=electrode_type, reg_base_on=reg_base_on, car_on=car_on, show_components=True)
+                W_s = cca.canonical_correlation_analysis(runs, montage, preprocessing_param, ch_picks=ch_picks, electrode_type=electrode_type, reg_base_on=reg_base_on, car_on=car_on, show_components=True)
                 # choose representing CCA component as a sapatial filter
                 cca_num = list(input("Choose CCA components: ").split(','))
                 cca_num = [int(x) for x in cca_num]
@@ -244,19 +107,6 @@ if offline_analysis:
             else:
                 cca_on = False
 
-<<<<<<< HEAD
-            effect_of_baseline = reg_model['baseline'].beta
-            effect_of_baseline.plot(picks=ch_picks, hline=[1.], units=dict(eeg=r'$\beta$ value'),
-                        titles=dict(eeg=ch_picks), selectable=False)
-
-            reg_corr = reg_model['Correct'].beta
-            reg_err = reg_model['ErrP'].beta
-            kwargs = dict(picks=ch_picks, show_sensors=False, truncate_yaxis=False)
-            mne.viz.plot_compare_evokeds(dict(Correct=trad_corr, ErrP=trad_err),
-                                        title="Traditional", **kwargs, combine='mean')
-            mne.viz.plot_compare_evokeds(dict(Correct=reg_corr, ErrP=reg_err),
-                                        title="Regression-based", **kwargs, combine='mean')
-=======
             # epoch initialization
             epochs = []
             epochs_corr = []
@@ -266,7 +116,6 @@ if offline_analysis:
             for run in runs:
                 ### 2.2 import raw data ###
                 raw = setup.load_raw_data(path=run, montage=montage, electrode_type=electrode_type)
->>>>>>> 96351fb8c7b96984ae7a81fae459ad6003aebdcc
 
                 ### 2.3 preprocessing ###
                 # apply notch (60, 120 Hz) and bandpass filter (1-30 Hz)
@@ -305,6 +154,7 @@ if offline_analysis:
             all_correct = mne.concatenate_epochs(epochs_corr)
             all_error = mne.concatenate_epochs(epochs_err)
             
+            # ch_picks = ['FCz', 'FC1', 'FC2', 'Cz', 'Fz']
             fc_chs = ['FCz', 'FC1', 'FC2', 'Cz', 'Fz']
             baseline = (epoch_tmin, 0)
             if reg_base_on == False:
@@ -567,19 +417,6 @@ for electrode_type in range(0, n_electrode_type):
             for test_run in available_runs:
                 train_runs = [i for i in available_runs if i != test_run] # hold out currently picked fold 
 
-<<<<<<< HEAD
-        # # grand average waveform
-        # grand_avg_corr.plot(titles="Correct: Average Potentials", picks='eeg',time_unit='s',gfp=False)
-        # grand_avg_err.plot(titles="Error: Average Potentials", picks='eeg',time_unit='s',gfp=False)  # show difference wave
-        # grand average waveform + topoplot (all ch)
-        time_unit = dict(time_unit="s")
-        grand_avg_corr.plot_joint(title="Correct: Average Potentials", picks='eeg', ts_args=time_unit, topomap_args=time_unit)
-        grand_avg_err.plot_joint(title="Error: Average Potentials", picks='eeg',ts_args=time_unit, topomap_args=time_unit)  # show difference wave
-        # grand average waveform + topoplot (fc ch)
-        time_unit = dict(time_unit="s")
-        grand_avg_corr.plot_joint(title="Correct: Average Potentials at Frontal Central Channels", picks=ch_picks, ts_args=time_unit, topomap_args=time_unit)
-        grand_avg_err.plot_joint(title="Error: Average Potentials at Frontal Central Channels", picks=ch_picks,ts_args=time_unit, topomap_args=time_unit)  # show difference wave
-=======
                 xs = []; y_train = []
                 for train_run in train_runs: 
                     x, y, f = setup.vhdr2numpy(offline_files[subj][electrode_type][train_run], montage, electrode_type=e, spatial_filter='CAR', t_baseline=-0.3, epoch_window=[0.2, 0.5], spectral_window=[2,12])
@@ -647,78 +484,10 @@ for electrode_type in range(0, n_electrode_type):
     plt.show()     
 
    
->>>>>>> 96351fb8c7b96984ae7a81fae459ad6003aebdcc
 
         
 
 
-<<<<<<< HEAD
-        # evokeds = dict(Correct=grand_avg_corr, ErrP=grand_avg_err) # mean only
-        evokeds = dict(Correct=list(all_correct.iter_evoked()), # mean and variance
-               ErrP=list(all_error.iter_evoked()))
-        mne.viz.plot_compare_evokeds(evokeds, picks='FCz', combine='mean')
-        mne.viz.plot_compare_evokeds(evokeds, picks=ch_picks, combine='mean')
-
-        '''
-        ### 2.6 create training data ###
-        # 3-fold cross validation
-        for test_fold in epochs:
-            train_epochs = [i for i in epochs if i != test_fold] # use all other runs to train
-            # print(test_run, train_runs)
-
-            # xs = []; Y_train = []
-
-            train_folds = mne.concatenate_epochs(train_epochs) # use all other runs to train
-            X_train = train_folds.get_data()
-            X_train = X_train.reshape(X_train.shape[0], -1)
-            print(X_train.shape)
-
-            Y_train = train_folds.events[:, 2]
-            Y_train[Y_train==10] = 0
-            Y_train[Y_train!=10] = 1
-            # y = [1 if yy in [9, 13] else 0 for yy in y]  # make labels binary 0: err, 1: corr
-            print(Y_train.shape)
-
-            X_test = test_fold.get_data()
-            X_test = X_test.reshape(X_test.shape[0], -1)
-            print(X_test.shape)
-
-            Y_test = test_fold.events[:, 2]
-            Y_test[Y_test==10] = 0
-            Y_test[Y_test!=10] = 1
-            # y = [1 if yy in [9, 13] else 0 for yy in y]  # make labels binary 0: err, 1: corr
-            print(Y_test.shape)
-
-            ############### Linear discriminant analysis
-            oa = OAS(store_precision=False, assume_centered=False)
-            # pipe_LDA = make_pipeline(FunctionTransformer(feature_extraction.eeg_power_band, validate=False), LinearDiscriminantAnalysis(solver="lsqr", covariance_estimator=oa))
-            pipe_LDA = make_pipeline(StandardScaler(), LinearDiscriminantAnalysis(solver="lsqr", covariance_estimator=oa))
-            pipe_LDA.fit(X_train, Y_train)
-
-            # TODO: need some debugging
-            
-            # Train set performance 
-            Y_pred_train = pipe_LDA.predict(X_train)
-            train_acc = accuracy_score(Y_train, Y_pred_train)
-            print('Train Set Performance: Linear Discriminant Analysis')
-            print('Accuracy score: {}'.format(train_acc))
-            print('Confusion Matrix:')
-            print(confusion_matrix(Y_train, Y_pred_train))
-            print('Classification Report:')
-            print(classification_report(Y_train, Y_pred_train, target_names=event_dict.keys()))
-            
-            # Test set performance
-            Y_pred_test = pipe_LDA.predict(X_test)
-            test_acc = accuracy_score(Y_test, Y_pred_test)
-            print('Test Set Performance: Linear Discriminant Analysis')
-            print('Accuracy score: {}'.format(test_acc))
-            print('Confusion Matrix:')
-            print(confusion_matrix(Y_test, Y_pred_test))
-            print('Classification Report:')
-            print(classification_report(Y_test, Y_pred_test, target_names=event_dict.keys()))
-        '''
-=======
->>>>>>> 96351fb8c7b96984ae7a81fae459ad6003aebdcc
 
 '''
 #SVM
