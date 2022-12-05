@@ -13,7 +13,7 @@ import cca
 from matplotlib import pyplot as plt
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
-from sklearn.svm import SVC
+import seaborn as sns
 
 # Classifier learning packages
 from sklearn.svm import SVC
@@ -45,7 +45,7 @@ offline_files, online1_files, online2_files, online_files = setup.get_file_paths
 # get international 10-20 montage
 montage = mne.channels.make_standard_montage('standard_1020')
 
-plt.rcParams.update({'font.size': 20})
+# plt.rcParams.update({'font.size': 20})
 
 ###### 2 Offline Analysis ######
 offline_analysis = False  # if we are not using CCA
@@ -377,22 +377,37 @@ if offline_analysis:
             '''
 
 
-
+def grouped_barplot(df, cat,subcat, val, err):
+    u = df[cat].unique()
+    x = np.arange(len(u))
+    subx = df[subcat].unique()
+    offsets = (np.arange(len(subx))-np.arange(len(subx)).mean())/(len(subx)+1.)
+    width= np.diff(offsets).mean()
+    for i,gr in enumerate(subx):
+        dfg = df[df[subcat] == gr]
+        plt.bar(x+offsets[i], dfg[val].values, width=width, 
+                label="{} {}".format(subcat, gr), yerr=dfg[err].values, capsize=5)
+    plt.xlabel(cat)
+    plt.ylabel(val)
+    plt.xticks(x, u)
+    plt.legend()
 
 ###### 3 Classification ######
-models = ['SVM (RBF kernel)', 'LDA', 'Logistic Regression', 'Random Forest']
+models = ['SVM (RBF kernel)', 'LDA', 'LogReg', 'RandomForest']
 classify_mode = 'validate'
 assert classify_mode in ['validate', 'test', 'bonus'] 
 ## validate: performs 3-fold cross-validation on offline datasets to output average cross-validated performance metric(s)
 ## test: train on all offline data, test on all online data (S1 + S2)
 ## bonus: train on all offline data + S1, then test on online S2 data 
 
-
+n_electrode_type = 2
 
 # nested list: [subj] [electode_type]
 scores = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
-for subj in range(n_subject):
-    for electrode_type in range(0, n_electrode_type): # 11/29/2022 using gel only for now
+errors = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
+
+for electrode_type in range(0, n_electrode_type):
+    for subj in range(n_subject):
         e = 'Gel' if electrode_type == 0 else 'Politag'
         
         if classify_mode == 'validate':
@@ -427,9 +442,9 @@ for subj in range(n_subject):
                         clf = SVC(kernel='rbf')  # default C=1
                     if model == 'LDA':
                         clf = LDA() # solver = svd is good for large number of features, eigenvector is optimal though
-                    if model == 'Logistic Regression':
-                        clf = LogisticRegression() 
-                    if model == 'Random Forest':
+                    if model == 'LogReg':
+                        clf = LogisticRegression(max_iter=300, solver='saga') 
+                    if model == 'RandomForest':
                         clf = RandomForestClassifier()
                 
                     # Train the model using the training sets
@@ -437,20 +452,41 @@ for subj in range(n_subject):
                     # Make predictions using the test set
                     y_pred = clf.predict(X_test)
                     # Prediction accuracy on training data
-                    print('Training accuracy =', clf.score(X_test, y_test), '\n')
+                    # print('Training accuracy =', clf.score(X_test, y_test), '\n')
                     validation_accuracies[i].append(float(clf.score(X_test, y_test)))
                     validation_models[i].append(clf) 
 
             model_cv_accuracies = [np.mean(sub_list) for sub_list in validation_accuracies]
             error = [np.std(sub_list) for sub_list in validation_accuracies]
-            plt.figure()
-            plt.bar(models, model_cv_accuracies, yerr=error, capsize=8)
-            plt.title("Subject " + str(subj+6) + [' Gel ', ' POLITAG '][electrode_type])
-            plt.ylabel('Accuracy')
-            plt.show()
+            scores[subj][electrode_type] = model_cv_accuracies
+            errors[subj][electrode_type] = error 
+            # plt.figure()
+            # plt.bar(models, model_cv_accuracies, yerr=error, capsize=8)
+            # plt.title("Subject " + str(subj+6) + [' Gel ', ' POLITAG '][electrode_type])
+            # plt.ylabel('Accuracy')
+            # plt.show()
 
-        if classify_mode == 'test':
-            pass 
+    my_df = [] 
+    for i in range(0, n_subject):
+        for mi, mm in enumerate(models): 
+            d = {'subject' : i+6,  # some formula for obtaining values
+                    'model' : mm,
+                    'accuracy' : scores[i][electrode_type][mi],
+                    'error' : errors[i][electrode_type][mi]
+                    }
+            my_df.append(d)
+
+    my_df = pd.DataFrame(my_df)
+
+    # sns.barplot(data=my_df, x='model', y='accuracy', hue='subject')
+    grouped_barplot(df=my_df, cat='model', subcat='subject', val='accuracy', err='error')
+    plt.title('3-fold cross-validation accuracies for ' + e)
+    plt.ylim([0, 1])
+    plt.show()     
+
+   
+
+        
 
 
 
