@@ -82,7 +82,7 @@ class Filtering:
     def external_artifact_rejection(self):
         self.raw.load_data()
         self.raw = self.notch()
-        filt_raw = self.bandpass()
+        filt_raw = self.bandpass(phase='minimum')
         # filt_raw = self.resample()
         return filt_raw
     

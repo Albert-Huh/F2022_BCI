@@ -10,9 +10,6 @@ import mne
 import setup
 import preprocessing
 import cca
-import numpy.matlib
-import matplotlib
-import matplotlib.pyplot as plt
 from matplotlib import pyplot as plt
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
