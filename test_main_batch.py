@@ -123,7 +123,6 @@ def vhdr2numpy(filename, politag: bool, spatial_filter: str, t_epoch):
             new_description.append('Correct trial')
         elif description[i] == 'Stimulus/condition 2':
             new_description.append('Error trial')
-
         else:
             new_description.append(description[i])
     
@@ -322,7 +321,7 @@ if validate:
                     validation_accuracies[i].append(float(clf.score(X_test, Y_test)))
                     validation_models[i].append(clf) 
 
-                print(str(len(runs)) + "-fold cross-validation accuracy: " + str(np.mean(validation_accuracies[i])))
+            print(str(len(runs)) + "-fold cross-validation accuracy: " + str(np.mean(validation_accuracies[i])))
 
             model_cv_accuracies = [sum(sub_list) / len(sub_list) for sub_list in validation_accuracies]
             plt.figure()
