@@ -89,7 +89,7 @@ for subj_ind in range(n_subject):
         epoch_tmax = 0.5
         n_cca_comp = 5
         preprocessing_param = {'low_f_c':low_f_c, 'high_f_c':high_f_c, 'epoch_tmin':epoch_tmin, 'epoch_tmax':epoch_tmax, 'n_cca_comp':n_cca_comp}
-
+        ch_picks = list(input("Choose importnat channels: ").replace(' ', '').split(','))
         # spatial filter parameters
         spat_filt = int(input("Spatial filtering setups (None [0], CAR [1], CCA [2], CAR+CCA [3]): "))
         if spat_filt==1 or spat_filt==3:
@@ -99,7 +99,7 @@ for subj_ind in range(n_subject):
         if spat_filt==2 or spat_filt==3:
             cca_on = True
             # build CCA using all runs
-            W_s = cca.canonical_correlation_analysis(runs, montage, preprocessing_param, electrode_type=electrode_type, reg_base_on=reg_base_on, car_on=car_on, show_components=True)
+            W_s = cca.canonical_correlation_analysis(runs, montage, preprocessing_param, ch_picks=ch_picks, electrode_type=electrode_type, reg_base_on=reg_base_on, car_on=car_on, show_components=True)
             # choose representing CCA component as a sapatial filter
             cca_num = list(input("Choose CCA components: ").split(','))
             cca_num = [int(x) for x in cca_num]
@@ -154,7 +154,7 @@ for subj_ind in range(n_subject):
         all_correct = mne.concatenate_epochs(epochs_corr)
         all_error = mne.concatenate_epochs(epochs_err)
         
-        fc_chs = ['FCz', 'FC1', 'FC2', 'Cz', 'Fz']
+        # ch_picks = ['FCz', 'FC1', 'FC2', 'Cz', 'Fz']
         baseline = (epoch_tmin, 0)
         if reg_base_on == False:
             all_correct = all_correct.apply_baseline(baseline)
@@ -163,7 +163,7 @@ for subj_ind in range(n_subject):
             corr_predictor = all_epochs.events[:, 2] != all_epochs.event_id['Error trial']
             err_predictor = all_epochs.events[:, 2] == all_epochs.event_id['Error trial']
             baseline_predictor = (all_epochs.copy().crop(*baseline)
-                    .pick_channels(fc_chs)
+                    .pick_channels(ch_picks)
                     .get_data()     # convert to NumPy array
                     .mean(axis=-1)  # average across timepoints
                     .squeeze()      # only 1 channel, so remove singleton dimension
@@ -198,7 +198,7 @@ for subj_ind in range(n_subject):
             corr_predictor = all_epochs.events[:, 2] != all_epochs.event_id['Error trial']
             err_predictor = all_epochs.events[:, 2] == all_epochs.event_id['Error trial']
             baseline_predictor = (all_epochs.copy().crop(*baseline)
-                    .pick_channels(fc_chs)
+                    .pick_channels(ch_picks)
                     .get_data()     # convert to NumPy array
                     .mean(axis=-1)  # average across timepoints
                     .squeeze()      # only 1 channel, so remove singleton dimension
@@ -217,12 +217,12 @@ for subj_ind in range(n_subject):
                                                 "baseline:Correct"])
 
             effect_of_baseline = reg_model['baseline'].beta
-            effect_of_baseline.plot(picks=fc_chs, hline=[1.], units=dict(eeg=r'$\beta$ value'),
-                        titles=dict(eeg=fc_chs), selectable=False)
+            effect_of_baseline.plot(picks=ch_picks, hline=[1.], units=dict(eeg=r'$\beta$ value'),
+                        titles=dict(eeg=ch_picks), selectable=False)
 
             reg_corr = reg_model['Correct'].beta
             reg_err = reg_model['ErrP'].beta
-            kwargs = dict(picks=fc_chs, show_sensors=False, truncate_yaxis=False)
+            kwargs = dict(picks=ch_picks, show_sensors=False, truncate_yaxis=False)
             mne.viz.plot_compare_evokeds(dict(Correct=trad_corr, ErrP=trad_err),
                                         title="Traditional", **kwargs, combine='mean')
             mne.viz.plot_compare_evokeds(dict(Correct=reg_corr, ErrP=reg_err),
@@ -281,8 +281,8 @@ for subj_ind in range(n_subject):
         grand_avg_err.plot_joint(title="Error: Average Potentials", picks='eeg',ts_args=time_unit, topomap_args=time_unit)  # show difference wave
         # grand average waveform + topoplot (fc ch)
         time_unit = dict(time_unit="s")
-        grand_avg_corr.plot_joint(title="Correct: Average Potentials at Frontal Central Channels", picks=fc_chs, ts_args=time_unit, topomap_args=time_unit)
-        grand_avg_err.plot_joint(title="Error: Average Potentials at Frontal Central Channels", picks=fc_chs,ts_args=time_unit, topomap_args=time_unit)  # show difference wave
+        grand_avg_corr.plot_joint(title="Correct: Average Potentials at Frontal Central Channels", picks=ch_picks, ts_args=time_unit, topomap_args=time_unit)
+        grand_avg_err.plot_joint(title="Error: Average Potentials at Frontal Central Channels", picks=ch_picks,ts_args=time_unit, topomap_args=time_unit)  # show difference wave
 
         
         
@@ -313,7 +313,7 @@ for subj_ind in range(n_subject):
         evokeds = dict(Correct=list(all_correct.iter_evoked()), # mean and variance
                ErrP=list(all_error.iter_evoked()))
         mne.viz.plot_compare_evokeds(evokeds, picks='FCz', combine='mean')
-        mne.viz.plot_compare_evokeds(evokeds, picks=fc_chs, combine='mean')
+        mne.viz.plot_compare_evokeds(evokeds, picks=ch_picks, combine='mean')
 
         '''
         ### 2.6 create training data ###

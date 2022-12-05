@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.cross_decomposition import CCA
 
-def canonical_correlation_analysis(run_paths, montage, preprocessing_param, electrode_type='Gel', reg_base_on=False, car_on=False, show_components=True):
+def canonical_correlation_analysis(run_paths, montage, preprocessing_param, ch_picks=['FCz', 'FC1', 'FC2', 'Cz', 'Fz'], electrode_type='Gel', reg_base_on=False, car_on=False, show_components=True):
     '''
     run_paths = list of file pathes (str) for raw EEG data (Brain Vision)
     montage = MNE montage file
@@ -56,9 +56,9 @@ def canonical_correlation_analysis(run_paths, montage, preprocessing_param, elec
     else:
         corr_predictor = all_epochs.events[:, 2] != all_epochs.event_id['Error trial']
         err_predictor = all_epochs.events[:, 2] == all_epochs.event_id['Error trial']
-        fc_chs = ['FCz', 'FC1', 'FC2', 'Cz', 'Fz']
+
         baseline_predictor = (all_epochs.copy().crop(*baseline)
-                .pick_channels(fc_chs)
+                .pick_channels(ch_picks)
                 .get_data()     # convert to NumPy array
                 .mean(axis=-1)  # average across timepoints
                 .squeeze()      # only 1 channel, so remove singleton dimension
@@ -95,8 +95,8 @@ def canonical_correlation_analysis(run_paths, montage, preprocessing_param, elec
     X = np.append(X_correct, X_error, axis=1).T
 
     # get desired ref Y (5 central ch, (n epochs*n sample))
-    Y_correct = np.tile(grand_avg_corr.get_data(picks=['FCz', 'FC1', 'FC2', 'Cz', 'Fz']),(1,len(all_correct.get_data())))
-    Y_error = np.tile(grand_avg_err.get_data(picks=['FCz', 'FC1', 'FC2', 'Cz', 'Fz']),(1,len(all_error.get_data())))
+    Y_correct = np.tile(grand_avg_corr.get_data(picks=ch_picks),(1,len(all_correct.get_data())))
+    Y_error = np.tile(grand_avg_err.get_data(picks=ch_picks),(1,len(all_error.get_data())))
     Y = np.append(Y_correct, Y_error, axis=1).T
 
     # apply CCA
