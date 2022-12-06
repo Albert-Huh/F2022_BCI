@@ -67,15 +67,13 @@ if offline_analysis:
                 electrode_type_ind = 1
             electrode_type = ['Gel','POLiTAG'][electrode_type_ind]
             print('Electrode type: ' + str(electrode_type))
-
-            #### debugging
+            ### debugging
             # subj_ind = 0
             # electrode_type_ind = 1
             # electrode_type = ['Gel','POLiTAG'][electrode_type_ind]
             # ####
             n_run = len(offline_files[subj_ind][electrode_type_ind])
             runs = offline_files[subj_ind][electrode_type_ind]
-
             ### 2.1 get preprocessing setup ###
             # baseline correction paremeter
             baseline_option = int(input("Baseline correction setups (Traditional [0], Regression-based [1] : "))
@@ -91,7 +89,7 @@ if offline_analysis:
             epoch_tmax = 0.5
             n_cca_comp = 5
             preprocessing_param = {'low_f_c':low_f_c, 'high_f_c':high_f_c, 'epoch_tmin':epoch_tmin, 'epoch_tmax':epoch_tmax, 'n_cca_comp':n_cca_comp}
-
+            ch_picks = list(input("Choose importnat channels: ").replace(' ', '').split(','))
             # spatial filter parameters
             spat_filt = int(input("Spatial filtering setups (None [0], CAR [1], CCA [2], CAR+CCA [3]): "))
             if spat_filt==1 or spat_filt==3:
@@ -101,7 +99,7 @@ if offline_analysis:
             if spat_filt==2 or spat_filt==3:
                 cca_on = True
                 # build CCA using all runs
-                W_s = cca.canonical_correlation_analysis(runs, montage, preprocessing_param, electrode_type=electrode_type, reg_base_on=reg_base_on, car_on=car_on, show_components=True)
+                W_s = cca.canonical_correlation_analysis(runs, montage, preprocessing_param, ch_picks=ch_picks, electrode_type=electrode_type, reg_base_on=reg_base_on, car_on=car_on, show_components=True)
                 # choose representing CCA component as a sapatial filter
                 cca_num = list(input("Choose CCA components: ").split(','))
                 cca_num = [int(x) for x in cca_num]
@@ -156,6 +154,7 @@ if offline_analysis:
             all_correct = mne.concatenate_epochs(epochs_corr)
             all_error = mne.concatenate_epochs(epochs_err)
             
+            # ch_picks = ['FCz', 'FC1', 'FC2', 'Cz', 'Fz']
             fc_chs = ['FCz', 'FC1', 'FC2', 'Cz', 'Fz']
             baseline = (epoch_tmin, 0)
             if reg_base_on == False:
