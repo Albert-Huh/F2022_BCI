@@ -377,9 +377,10 @@ if offline_analysis:
             '''
 
 
-def grouped_barplot(df, cat,subcat, val, err):
+def grouped_barplot(df, cat, subcat, val, err):
     u = df[cat].unique()
     x = np.arange(len(u))
+
     subx = df[subcat].unique()
     offsets = (np.arange(len(subx))-np.arange(len(subx)).mean())/(len(subx)+1.)
     width= np.diff(offsets).mean()
@@ -387,6 +388,7 @@ def grouped_barplot(df, cat,subcat, val, err):
         dfg = df[df[subcat] == gr]
         plt.bar(x+offsets[i], dfg[val].values, width=width, 
                 label="{} {}".format(subcat, gr), yerr=dfg[err].values, capsize=5)
+    
     plt.xlabel(cat)
     plt.ylabel(val)
     plt.xticks(x, u)
@@ -394,18 +396,19 @@ def grouped_barplot(df, cat,subcat, val, err):
 
 ###### 3 Classification ######
 models = ['SVM (RBF kernel)', 'LDA', 'LogReg', 'RandomForest']
-classify_mode = 'validate'
+classify_mode = 'test'
 assert classify_mode in ['validate', 'test', 'bonus'] 
 ## validate: performs 3-fold cross-validation on offline datasets to output average cross-validated performance metric(s)
 ## test: train on all offline data, test on all online data (S1 + S2)
 ## bonus: train on all offline data + S1, then test on online S2 data 
 
 n_electrode_type = 2
+downsampling_ratio = 0.25
 
 # nested list: [subj] [electode_type]
 scores = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
 errors = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
-
+my_df = []
 for electrode_type in range(0, n_electrode_type):
     for subj in range(n_subject):
         e = 'Gel' if electrode_type == 0 else 'Politag'
@@ -420,7 +423,7 @@ for electrode_type in range(0, n_electrode_type):
 
                 xs = []; y_train = []
                 for train_run in train_runs: 
-                    x, y, f = setup.vhdr2numpy(offline_files[subj][electrode_type][train_run], montage, electrode_type=e, spatial_filter='CAR', t_baseline=-0.3, epoch_window=[0.2, 0.5], spectral_window=[2,12])
+                    x, y, f = setup.vhdr2numpy(offline_files[subj][electrode_type][train_run], montage, electrode_type=e, spatial_filter='CAR', t_baseline=-0.3, epoch_window=[0.2, 0.5], spectral_window=[2,12], downsampling_ratio=downsampling_ratio)
                     xs.append(x)
                     y_train = y_train + y
 
@@ -428,7 +431,7 @@ for electrode_type in range(0, n_electrode_type):
                 X_train = pd.DataFrame(data=X_train, columns=f)
                 y_train = pd.DataFrame(data=y_train)
 
-                X_test, y_test, f = setup.vhdr2numpy(offline_files[subj][electrode_type][test_run], montage, electrode_type=e, spatial_filter='CAR', t_baseline=-0.3, epoch_window=[0.2, 0.5], spectral_window=[2,12])
+                X_test, y_test, f = setup.vhdr2numpy(offline_files[subj][electrode_type][test_run], montage, electrode_type=e, spatial_filter='CAR', t_baseline=-0.3, epoch_window=[0.2, 0.5], spectral_window=[2,12], downsampling_ratio=downsampling_ratio)
                 X_test = pd.DataFrame(data=X_test, columns=f)
                 y_test = pd.DataFrame(data=y_test)
 
@@ -460,30 +463,83 @@ for electrode_type in range(0, n_electrode_type):
             error = [np.std(sub_list) for sub_list in validation_accuracies]
             scores[subj][electrode_type] = model_cv_accuracies
             errors[subj][electrode_type] = error 
-            # plt.figure()
-            # plt.bar(models, model_cv_accuracies, yerr=error, capsize=8)
-            # plt.title("Subject " + str(subj+6) + [' Gel ', ' POLITAG '][electrode_type])
-            # plt.ylabel('Accuracy')
-            # plt.show()
+        
+        if classify_mode == 'test':
+            train_runs = offline_files[subj][electrode_type]
+            test_runs = online_files[subj][electrode_type]
 
-    my_df = [] 
+            xs = []; y_train = []
+            for i, run in enumerate(train_runs):
+                x, y, f = setup.vhdr2numpy(run, montage, electrode_type=e, spatial_filter='CAR', t_baseline=-0.3, epoch_window=[0.2, 0.5], spectral_window=[2,12], downsampling_ratio=downsampling_ratio)
+                xs.append(x)
+                y_train = y_train + y
+            X_train = np.vstack(xs)
+            X_train = pd.DataFrame(data=X_train, columns=f)
+            y_train = pd.DataFrame(data=y_train)
+
+            xs = []; y_test = [] 
+            for i, run in enumerate(test_runs): 
+                x, y, f = setup.vhdr2numpy(run, montage, electrode_type=e, spatial_filter='CAR', t_baseline=-0.3, epoch_window=[0.2, 0.5], spectral_window=[2,12], downsampling_ratio=downsampling_ratio)
+                xs.append(x)
+                y_test = y_test + y
+            X_test = np.vstack(xs) 
+            X_test = pd.DataFrame(data=X_test, columns=f)
+            y_test = pd.DataFrame(data=y_test)
+
+            scaler = StandardScaler()  # normalization: zero mean, unit variance
+            scaler.fit(X_train)  # scaling factor determined from the training set
+            X_train = scaler.transform(X_train)
+            X_test = scaler.transform(X_test)  # apply the same scaling to the test set 
+
+            clf = RandomForestClassifier()
+
+            # Train the model using the training sets
+            clf.fit(X_train, y_train.values.ravel())
+            # Make predictions using the test set
+            y_pred = clf.predict(X_test)
+            score = float(clf.score(X_test, y_test)) 
+            scores[subj][electrode_type] = [score] 
+            errors[subj][electrode_type] = [0]  # nothing to stdev against
+
+            # Other performance metrics 
+
+
+    # plotting of figures 
+    if classify_mode == 'test' or classify_mode == 'bonus':
+        models = ['RandomForest'] # decide on 1 model 
+    
     for i in range(0, n_subject):
         for mi, mm in enumerate(models): 
             d = {'subject' : i+6,  # some formula for obtaining values
-                    'model' : mm,
-                    'accuracy' : scores[i][electrode_type][mi],
-                    'error' : errors[i][electrode_type][mi]
-                    }
+                 'model' : mm,
+                 'electrode_type' : electrode_type,
+                 'accuracy' : scores[i][electrode_type][mi],
+                 'error' : errors[i][electrode_type][mi]
+                 }
             my_df.append(d)
+    
+    if classify_mode == 'validate':
+        my_df = pd.DataFrame(my_df)
+        print(my_df)
+        grouped_barplot(df=my_df, cat='model', subcat='subject', val='accuracy', err='error')
+        plt.title('3-fold cross-validation accuracies for ' + e)
+        plt.ylim([0, 1])
+        plt.show()
 
+if classify_mode == 'test':
     my_df = pd.DataFrame(my_df)
 
-    # sns.barplot(data=my_df, x='model', y='accuracy', hue='subject')
-    grouped_barplot(df=my_df, cat='model', subcat='subject', val='accuracy', err='error')
-    plt.title('3-fold cross-validation accuracies for ' + e)
-    plt.ylim([0, 1])
-    plt.show()     
-
+    for e in range(n_electrode_type):
+        my_df.loc[my_df['electrode_type'] == e, 'error'] = np.std(my_df.loc[my_df['electrode_type'] == e, 'accuracy'])
+        
+    gp = my_df.groupby(by=("electrode_type"))
+    means = gp.mean() 
+    errors = gp.std()
+    ax = means["accuracy"].plot.bar(yerr=errors["accuracy"], capsize=4, rot=0, xlabel="Electrode type", ylabel="accuracy")
+    ax.set_xticklabels(["Gel", "Politag"])
+    ax.set_title('Testset accuracies, subjects 6-8')
+    ax.set_ylim([0, 1])
+    plt.show() 
    
 
         
