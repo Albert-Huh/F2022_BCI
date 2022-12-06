@@ -155,7 +155,7 @@ def vhdr2numpy(filename, montage, electrode_type, spatial_filter, t_baseline, ep
     print(x.shape)
 
     y = epoc.events[:, 2]
-    y = [1 if yy in [9, 13] else 0 for yy in y]  # make labels binary
+    y = [0 if yy in [9, 13] else 1 for yy in y]  # make labels binary
 
     print("y")
 

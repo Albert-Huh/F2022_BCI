@@ -25,13 +25,14 @@ from sklearn.covariance import OAS
 from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.gaussian_process.kernels import RBF
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, roc_auc_score, roc_curve, auc
 from sklearn.metrics import f1_score
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import FunctionTransformer
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 from sklearn.linear_model import LogisticRegression 
+from sklearn.metrics import ConfusionMatrixDisplay
 
 ###### 1 Initialization ######
 # define data directory
@@ -284,8 +285,6 @@ if offline_analysis:
             time_unit = dict(time_unit="s")
             grand_avg_corr.plot_joint(title="Correct: Average Potentials at Frontal Central Channels", picks=fc_chs, ts_args=time_unit, topomap_args=time_unit)
             grand_avg_err.plot_joint(title="Error: Average Potentials at Frontal Central Channels", picks=fc_chs,ts_args=time_unit, topomap_args=time_unit)  # show difference wave
-
-            
             
             vmin = min(grand_avg_corr.get_data().min(),
                     grand_avg_err.get_data().min()) * 1e6
@@ -395,7 +394,7 @@ def grouped_barplot(df, cat, subcat, val, err):
 
 ###### 3 Classification ######
 models = ['SVM (RBF kernel)', 'LDA', 'LogReg', 'RandomForest']
-classify_mode = 'test'
+classify_mode = 'bonus'
 assert classify_mode in ['validate', 'test', 'bonus'] 
 ## validate: performs 3-fold cross-validation on offline datasets to output average cross-validated performance metric(s)
 ## test: train on all offline data, test on all online data (S1 + S2)
@@ -407,7 +406,16 @@ downsampling_ratio = 0.25
 # nested list: [subj] [electode_type]
 scores = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
 errors = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
-my_df = []
+scores_aucs = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
+errors_aucs = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
+if classify_mode == 'bonus':
+    scores_S2 = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
+    errors_S2 = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
+    scores_S2_aucs = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
+    errors_S2_aucs = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
+    training_schemes = ['Offline Only', 'Offline + Online S1']
+
+my_df_prep = []
 for electrode_type in range(0, n_electrode_type):
     for subj in range(n_subject):
         e = 'Gel' if electrode_type == 0 else 'Politag'
@@ -415,6 +423,7 @@ for electrode_type in range(0, n_electrode_type):
         if classify_mode == 'validate':
             available_runs = range(len(offline_files[subj][electrode_type]))
             validation_accuracies = [[] for i in range(len(models))]
+            aucs = [[] for i in range(len(models))]
             validation_models = [[] for i in range(len(models))]
 
             for test_run in available_runs:
@@ -441,7 +450,7 @@ for electrode_type in range(0, n_electrode_type):
 
                 for i, model in enumerate(models):
                     if model == 'SVM (RBF kernel)':
-                        clf = SVC(kernel='rbf')  # default C=1
+                        clf = SVC(kernel='rbf', probability=True)  # default C=1
                     if model == 'LDA':
                         clf = LDA() # solver = svd is good for large number of features, eigenvector is optimal though
                     if model == 'LogReg':
@@ -458,12 +467,22 @@ for electrode_type in range(0, n_electrode_type):
                     validation_accuracies[i].append(float(clf.score(X_test, y_test)))
                     validation_models[i].append(clf) 
 
+                    prob = clf.predict_proba(X_test)
+                    fpr, tpr, thresholds = roc_curve(y_test, prob[:, 1]) 
+                    area = auc(fpr, tpr)
+                    aucs[i].append(area)
+
             model_cv_accuracies = [np.mean(sub_list) for sub_list in validation_accuracies]
             error = [np.std(sub_list) for sub_list in validation_accuracies]
+            model_cv_aucs = [np.mean(sub_list) for sub_list in aucs]
+            error_aucs = [np.std(sub_list) for sub_list in aucs]
+            
             scores[subj][electrode_type] = model_cv_accuracies
             errors[subj][electrode_type] = error 
-        
-        if classify_mode == 'test':
+            scores_aucs[subj][electrode_type] = model_cv_aucs
+            errors_aucs[subj][electrode_type] = error_aucs
+
+        if classify_mode == 'test' or classify_mode == 'bonus':  # bonus should also execute this to obtain comparison point.
             train_runs = offline_files[subj][electrode_type]
             test_runs = online_files[subj][electrode_type]
 
@@ -497,11 +516,74 @@ for electrode_type in range(0, n_electrode_type):
             # Make predictions using the test set
             y_pred = clf.predict(X_test)
             score = float(clf.score(X_test, y_test)) 
+
+            prob = clf.predict_proba(X_test)
+            fpr, tpr, thresholds = roc_curve(y_test, prob[:, 1]) 
+
             scores[subj][electrode_type] = [score] 
             errors[subj][electrode_type] = [0]  # nothing to stdev against
+            scores_aucs[subj][electrode_type] = [auc(fpr, tpr)]
+            errors_aucs[subj][electrode_type] = [0]  # nothing to stdev against
 
             # Other performance metrics 
+            # ConfusionMatrixDisplay.from_predictions(y_test, y_pred)
 
+        if classify_mode == 'bonus':
+            train_runs = offline_files[subj][electrode_type]
+            online1_runs = online1_files[subj][electrode_type]
+            online2_runs = online2_files[subj][electrode_type]
+
+            xs = []; y_train = []
+            for i, run in enumerate(train_runs):
+                x, y, f = setup.vhdr2numpy(run, montage, electrode_type=e, spatial_filter='CAR', t_baseline=-0.3, epoch_window=[0.2, 0.5], spectral_window=[2,12], downsampling_ratio=downsampling_ratio)
+                xs.append(x)
+                y_train = y_train + y
+
+            for i, run in enumerate(online1_runs):
+                x, y, f = setup.vhdr2numpy(run, montage, electrode_type=e, spatial_filter='CAR', t_baseline=-0.3, epoch_window=[0.2, 0.5], spectral_window=[2,12], downsampling_ratio=downsampling_ratio)
+                xs.append(x)
+                y_train = y_train + y  
+
+            X_train = np.vstack(xs)
+            X_train = pd.DataFrame(data=X_train, columns=f)
+            y_train = pd.DataFrame(data=y_train)
+
+            xs = []; y_test = [] 
+            for i, run in enumerate(online2_runs): 
+                x, y, f = setup.vhdr2numpy(run, montage, electrode_type=e, spatial_filter='CAR', t_baseline=-0.3, epoch_window=[0.2, 0.5], spectral_window=[2,12], downsampling_ratio=downsampling_ratio)
+                xs.append(x)
+                y_test = y_test + y
+            X_test = np.vstack(xs) 
+            X_test = pd.DataFrame(data=X_test, columns=f)
+            y_test = pd.DataFrame(data=y_test)
+
+            scaler = StandardScaler()  # normalization: zero mean, unit variance
+            scaler.fit(X_train)  # scaling factor determined from the training set
+            X_train = scaler.transform(X_train)
+            X_test = scaler.transform(X_test)  # apply the same scaling to the test set 
+
+            clf = RandomForestClassifier()
+
+            # Train the model using the training sets
+            clf.fit(X_train, y_train.values.ravel())
+            # Make predictions using the test set
+            y_pred = clf.predict(X_test)
+            score = float(clf.score(X_test, y_test)) 
+
+            prob = clf.predict_proba(X_test)
+            fpr, tpr, thresholds = roc_curve(y_test, prob[:, 1]) 
+
+            scores_S2[subj][electrode_type] = [score] 
+            errors_S2[subj][electrode_type] = [0]  # nothing to stdev against
+            scores_S2_aucs[subj][electrode_type] = [auc(fpr, tpr)]
+            errors_S2_aucs[subj][electrode_type] = [0]  # nothing to stdev against
+
+            # Other performance metrics 
+            # ConfusionMatrixDisplay.from_predictions(y_test, y_pred)
+
+
+    if classify_mode == 'validate':
+        my_df_prep = [] # in validate, we are not doing electrode_type by electrode_type
 
     # plotting of figures 
     if classify_mode == 'test' or classify_mode == 'bonus':
@@ -513,20 +595,39 @@ for electrode_type in range(0, n_electrode_type):
                  'model' : mm,
                  'electrode_type' : electrode_type,
                  'accuracy' : scores[i][electrode_type][mi],
-                 'error' : errors[i][electrode_type][mi]
+                 'error' : errors[i][electrode_type][mi],
+                 'auc': scores_aucs[i][electrode_type][mi],
+                 'error_auc': errors_aucs[i][electrode_type][mi], 
+                 'trainsets': training_schemes[0]
                  }
-            my_df.append(d)
+            my_df_prep.append(d)
+
+            if classify_mode == 'bonus':
+                d = {'subject' : i+6,  # some formula for obtaining values
+                 'model' : mm,
+                 'electrode_type' : electrode_type,
+                 'accuracy' : scores_S2[i][electrode_type][mi],
+                 'error' : errors_S2[i][electrode_type][mi],
+                 'auc': scores_S2_aucs[i][electrode_type][mi],
+                 'error_auc': errors_S2_aucs[i][electrode_type][mi], 
+                 'trainsets': training_schemes[1]
+                 }
+                my_df_prep.append(d)
     
     if classify_mode == 'validate':
-        my_df = pd.DataFrame(my_df)
+        my_df = pd.DataFrame(my_df_prep)
         print(my_df)
         grouped_barplot(df=my_df, cat='model', subcat='subject', val='accuracy', err='error')
-        plt.title('3-fold cross-validation accuracies for ' + e)
+        plt.title('3-fold cross-validated accuracies for ' + e)
+        plt.ylim([0, 1])
+        plt.show()
+        grouped_barplot(df=my_df, cat='model', subcat='subject', val='auc', err='error_auc')
+        plt.title('3-fold cross-validated AUCs for ' + e)
         plt.ylim([0, 1])
         plt.show()
 
 if classify_mode == 'test':
-    my_df = pd.DataFrame(my_df)
+    my_df = pd.DataFrame(my_df_prep)
 
     for e in range(n_electrode_type):
         my_df.loc[my_df['electrode_type'] == e, 'error'] = np.std(my_df.loc[my_df['electrode_type'] == e, 'accuracy'])
@@ -540,10 +641,33 @@ if classify_mode == 'test':
     ax.set_ylim([0, 1])
     plt.show() 
    
+if classify_mode == 'bonus': 
+    my_df = pd.DataFrame(my_df_prep)
 
+    for e in range(n_electrode_type):
+        my_df.loc[my_df['electrode_type'] == e, 'error'] = np.std(my_df.loc[my_df['electrode_type'] == e, 'accuracy'])
         
+    gp = my_df.groupby(by=("electrode_type"))
+    means = gp.mean() 
+    errors = gp.std()
+    ax = means["accuracy"].plot.bar(yerr=errors["accuracy"], capsize=4, rot=0, xlabel="Electrode type", ylabel="accuracy")
+    ax.set_xticklabels(["Gel", "Politag"])
+    ax.set_title('Testset accuracies, subjects 6-8')
+    ax.set_ylim([0, 1])
+    plt.show() 
 
-
+    for t in training_schemes:
+        my_df.loc[my_df['trainsets'] == t, 'error'] = np.std(my_df.loc[my_df['trainsets'] == t, 'accuracy'])
+        
+    gp = my_df.groupby(by=("trainsets"))
+    means = gp.mean() 
+    errors = gp.std()
+    ax = means["accuracy"].plot.bar(yerr=errors["accuracy"], capsize=4, rot=0, xlabel="Training scheme", ylabel="accuracy")
+    ax.set_xticklabels(training_schemes)
+    ax.set_title('Testset accuracies, subjects 6-8')
+    ax.set_ylim([0, 1])
+    plt.show() 
+   
 
 '''
 #SVM
