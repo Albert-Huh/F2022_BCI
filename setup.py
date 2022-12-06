@@ -112,7 +112,7 @@ def create_events(raw):
     return events, event_dict
 
 
-def vhdr2numpy(filename, montage, electrode_type, spatial_filter, t_baseline, epoch_window, spectral_window, W_s=None, cca_num=None):
+def vhdr2numpy(filename, montage, electrode_type, spatial_filter, t_baseline, epoch_window, spectral_window, downsampling_ratio, W_s=None, cca_num=None):
     assert t_baseline <= 0
     assert epoch_window[0] >= 0
     assert epoch_window[0] < epoch_window[1]
@@ -140,16 +140,24 @@ def vhdr2numpy(filename, montage, electrode_type, spatial_filter, t_baseline, ep
 
     x = epoc.get_data()
     assert x.shape[1] == len(epoc.ch_names)
-    train_start_sample = ceil(abs(t_baseline) * 512)
+    train_start_sample = ceil(abs(t_baseline) * 512) #  skip past negative t portion of epoch
     feature_names = []
     for ch in range(x.shape[1]):
-        for sample in range(train_start_sample, x.shape[2]):
+        for sample in range(train_start_sample, x.shape[2], int(1/downsampling_ratio)):
             feature_names.append(str(epoc.ch_names[ch]) + "_" + str(sample - train_start_sample))
+    print("feature_names")
+    print(len(feature_names))
 
-    x = x[:, :, train_start_sample:]
+    print(x.shape)
+    x = x[:, :, train_start_sample:x.shape[2]:int(1/downsampling_ratio)]  # downsample x
+    print(x.shape)
     x = np.reshape(x, (x.shape[0], x.shape[1]*x.shape[2]))  # trials * (channels*samples)
-    
-    y = epoc.events[:, 2]
-    y = [1 if yy in [9, 13] else 0 for yy in y]  # make labels binary
+    print(x.shape)
 
+    y = epoc.events[:, 2]
+    y = [0 if yy in [9, 13] else 1 for yy in y]  # make labels binary
+
+    print("y")
+
+    print(len(y))
     return x, y, feature_names
