@@ -48,22 +48,20 @@ montage = mne.channels.make_standard_montage('standard_1020')
 # plt.rcParams.update({'font.size': 20})
 
 ###### 2 Offline Analysis ######
-offline_analysis = False  # if we are not using CCA
-
+offline_analysis = True  # if we are not using CCA
+n_electrode_type = 1
 if offline_analysis: 
     print('Start offline analysis: ')
     plotting = int(input("Ignore POLiTAG (yes [0], no [1]: "))
-    if plotting == 0:
-        n_subject = 3
-        n_electrode_type = 1
 
-    print(offline_files[0][0])
     for subj_ind in range(n_subject):
         subject_num = subj_ind+6
         print('Subject number: ' + str(subject_num))
 
         for electrode_type_ind in range(n_electrode_type): 
-            if plotting == 1:
+            if plotting == 0:
+                electrode_type_ind = 0
+            else:
                 electrode_type_ind = 1
             electrode_type = ['Gel','POLiTAG'][electrode_type_ind]
             print('Electrode type: ' + str(electrode_type))
@@ -391,97 +389,99 @@ def grouped_barplot(df, cat,subcat, val, err):
     plt.xticks(x, u)
     plt.legend()
 
-###### 3 Classification ######
-models = ['SVM (RBF kernel)', 'LDA', 'LogReg', 'RandomForest']
-classify_mode = 'validate'
-assert classify_mode in ['validate', 'test', 'bonus'] 
-## validate: performs 3-fold cross-validation on offline datasets to output average cross-validated performance metric(s)
-## test: train on all offline data, test on all online data (S1 + S2)
-## bonus: train on all offline data + S1, then test on online S2 data 
+classify = False
+if classify:
+    ###### 3 Classification ######
+    models = ['SVM (RBF kernel)', 'LDA', 'LogReg', 'RandomForest']
+    classify_mode = 'validate'
+    assert classify_mode in ['validate', 'test', 'bonus'] 
+    ## validate: performs 3-fold cross-validation on offline datasets to output average cross-validated performance metric(s)
+    ## test: train on all offline data, test on all online data (S1 + S2)
+    ## bonus: train on all offline data + S1, then test on online S2 data 
 
-n_electrode_type = 2
+    n_electrode_type = 2
 
-# nested list: [subj] [electode_type]
-scores = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
-errors = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
+    # nested list: [subj] [electode_type]
+    scores = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
+    errors = [ [[] for i in range(n_electrode_type)] for i in range(n_subject) ]
 
-for electrode_type in range(0, n_electrode_type):
-    for subj in range(n_subject):
-        e = 'Gel' if electrode_type == 0 else 'Politag'
-        
-        if classify_mode == 'validate':
-            available_runs = range(len(offline_files[subj][electrode_type]))
-            validation_accuracies = [[] for i in range(len(models))]
-            validation_models = [[] for i in range(len(models))]
+    for electrode_type in range(0, n_electrode_type):
+        for subj in range(n_subject):
+            e = 'Gel' if electrode_type == 0 else 'Politag'
+            
+            if classify_mode == 'validate':
+                available_runs = range(len(offline_files[subj][electrode_type]))
+                validation_accuracies = [[] for i in range(len(models))]
+                validation_models = [[] for i in range(len(models))]
 
-            for test_run in available_runs:
-                train_runs = [i for i in available_runs if i != test_run] # hold out currently picked fold 
+                for test_run in available_runs:
+                    train_runs = [i for i in available_runs if i != test_run] # hold out currently picked fold 
 
-                xs = []; y_train = []
-                for train_run in train_runs: 
-                    x, y, f = setup.vhdr2numpy(offline_files[subj][electrode_type][train_run], montage, electrode_type=e, spatial_filter='CAR', t_baseline=-0.3, epoch_window=[0.2, 0.5], spectral_window=[2,12])
-                    xs.append(x)
-                    y_train = y_train + y
+                    xs = []; y_train = []
+                    for train_run in train_runs: 
+                        x, y, f = setup.vhdr2numpy(offline_files[subj][electrode_type][train_run], montage, electrode_type=e, spatial_filter='CAR', t_baseline=-0.3, epoch_window=[0.2, 0.5], spectral_window=[2,12])
+                        xs.append(x)
+                        y_train = y_train + y
 
-                X_train = np.vstack(xs)
-                X_train = pd.DataFrame(data=X_train, columns=f)
-                y_train = pd.DataFrame(data=y_train)
+                    X_train = np.vstack(xs)
+                    X_train = pd.DataFrame(data=X_train, columns=f)
+                    y_train = pd.DataFrame(data=y_train)
 
-                X_test, y_test, f = setup.vhdr2numpy(offline_files[subj][electrode_type][test_run], montage, electrode_type=e, spatial_filter='CAR', t_baseline=-0.3, epoch_window=[0.2, 0.5], spectral_window=[2,12])
-                X_test = pd.DataFrame(data=X_test, columns=f)
-                y_test = pd.DataFrame(data=y_test)
+                    X_test, y_test, f = setup.vhdr2numpy(offline_files[subj][electrode_type][test_run], montage, electrode_type=e, spatial_filter='CAR', t_baseline=-0.3, epoch_window=[0.2, 0.5], spectral_window=[2,12])
+                    X_test = pd.DataFrame(data=X_test, columns=f)
+                    y_test = pd.DataFrame(data=y_test)
 
-                scaler = StandardScaler()  # normalization: zero mean, unit variance
-                scaler.fit(X_train)  # scaling factor determined from the training set
-                X_train = scaler.transform(X_train)
-                X_test = scaler.transform(X_test)  # apply the same scaling to the test set 
+                    scaler = StandardScaler()  # normalization: zero mean, unit variance
+                    scaler.fit(X_train)  # scaling factor determined from the training set
+                    X_train = scaler.transform(X_train)
+                    X_test = scaler.transform(X_test)  # apply the same scaling to the test set 
 
-                for i, model in enumerate(models):
-                    if model == 'SVM (RBF kernel)':
-                        clf = SVC(kernel='rbf')  # default C=1
-                    if model == 'LDA':
-                        clf = LDA() # solver = svd is good for large number of features, eigenvector is optimal though
-                    if model == 'LogReg':
-                        clf = LogisticRegression(max_iter=300, solver='saga') 
-                    if model == 'RandomForest':
-                        clf = RandomForestClassifier()
-                
-                    # Train the model using the training sets
-                    clf.fit(X_train, y_train.values.ravel())
-                    # Make predictions using the test set
-                    y_pred = clf.predict(X_test)
-                    # Prediction accuracy on training data
-                    # print('Training accuracy =', clf.score(X_test, y_test), '\n')
-                    validation_accuracies[i].append(float(clf.score(X_test, y_test)))
-                    validation_models[i].append(clf) 
+                    for i, model in enumerate(models):
+                        if model == 'SVM (RBF kernel)':
+                            clf = SVC(kernel='rbf')  # default C=1
+                        if model == 'LDA':
+                            clf = LDA() # solver = svd is good for large number of features, eigenvector is optimal though
+                        if model == 'LogReg':
+                            clf = LogisticRegression(max_iter=300, solver='saga') 
+                        if model == 'RandomForest':
+                            clf = RandomForestClassifier()
+                    
+                        # Train the model using the training sets
+                        clf.fit(X_train, y_train.values.ravel())
+                        # Make predictions using the test set
+                        y_pred = clf.predict(X_test)
+                        # Prediction accuracy on training data
+                        # print('Training accuracy =', clf.score(X_test, y_test), '\n')
+                        validation_accuracies[i].append(float(clf.score(X_test, y_test)))
+                        validation_models[i].append(clf) 
 
-            model_cv_accuracies = [np.mean(sub_list) for sub_list in validation_accuracies]
-            error = [np.std(sub_list) for sub_list in validation_accuracies]
-            scores[subj][electrode_type] = model_cv_accuracies
-            errors[subj][electrode_type] = error 
-            # plt.figure()
-            # plt.bar(models, model_cv_accuracies, yerr=error, capsize=8)
-            # plt.title("Subject " + str(subj+6) + [' Gel ', ' POLITAG '][electrode_type])
-            # plt.ylabel('Accuracy')
-            # plt.show()
+                model_cv_accuracies = [np.mean(sub_list) for sub_list in validation_accuracies]
+                error = [np.std(sub_list) for sub_list in validation_accuracies]
+                scores[subj][electrode_type] = model_cv_accuracies
+                errors[subj][electrode_type] = error 
+                # plt.figure()
+                # plt.bar(models, model_cv_accuracies, yerr=error, capsize=8)
+                # plt.title("Subject " + str(subj+6) + [' Gel ', ' POLITAG '][electrode_type])
+                # plt.ylabel('Accuracy')
+                # plt.show()
 
-    my_df = [] 
-    for i in range(0, n_subject):
-        for mi, mm in enumerate(models): 
-            d = {'subject' : i+6,  # some formula for obtaining values
-                    'model' : mm,
-                    'accuracy' : scores[i][electrode_type][mi],
-                    'error' : errors[i][electrode_type][mi]
-                    }
-            my_df.append(d)
+        my_df = [] 
+        for i in range(0, n_subject):
+            for mi, mm in enumerate(models): 
+                d = {'subject' : i+6,  # some formula for obtaining values
+                        'model' : mm,
+                        'accuracy' : scores[i][electrode_type][mi],
+                        'error' : errors[i][electrode_type][mi]
+                        }
+                my_df.append(d)
 
-    my_df = pd.DataFrame(my_df)
+        my_df = pd.DataFrame(my_df)
 
-    # sns.barplot(data=my_df, x='model', y='accuracy', hue='subject')
-    grouped_barplot(df=my_df, cat='model', subcat='subject', val='accuracy', err='error')
-    plt.title('3-fold cross-validation accuracies for ' + e)
-    plt.ylim([0, 1])
-    plt.show()     
+        # sns.barplot(data=my_df, x='model', y='accuracy', hue='subject')
+        grouped_barplot(df=my_df, cat='model', subcat='subject', val='accuracy', err='error')
+        plt.title('3-fold cross-validation accuracies for ' + e)
+        plt.ylim([0, 1])
+        plt.show()     
 
    
 
