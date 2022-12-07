@@ -124,7 +124,7 @@ def canonical_correlation_analysis(run_paths, montage, preprocessing_param, ch_p
             cbar.ax.tick_params(labelsize=tick_font_size)
             cbar.set_label('Weight (A.U.)',fontsize=22)
             plt.rcParams.update({'font.size': 20})
-            fig.suptitle('CCA Components',fontsize=40)
+            fig.suptitle('CCA Components',fontsize=30)
             plt.show()
         else:
             im, cn = mne.viz.plot_topomap(W_s.T[0], raw.info, axes=axs, size=3,vlim=(-1, 1), vmin=vmin, vmax=vmax, show=False)
@@ -133,7 +133,7 @@ def canonical_correlation_analysis(run_paths, montage, preprocessing_param, ch_p
             cbar.ax.tick_params(labelsize=tick_font_size)
             cbar.set_label('Weight (A.U.)',fontsize=22)
             plt.rcParams.update({'font.size': 20})
-            fig.suptitle('CCA Components',fontsize=40)
+            fig.suptitle('CCA Components',fontsize=30)
             plt.show()
 
 

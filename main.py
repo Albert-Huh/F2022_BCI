@@ -49,20 +49,21 @@ plt.rcParams.update({'font.size': 20})
 
 ###### 2 Offline Analysis ######
 offline_analysis = True  # if we are not using CCA
-n_electrode_type = 1
+time_picks = [[np.array([0.26, 0.32]), np.array([0.25, 0.32])], [np.array([0.27, 0.33]), np.array([0.27, 0.33])], [np.array([0.25, 0.3]), np.array([0.22, 0.28])]]
+# n_electrode_type = 1
 if offline_analysis: 
     print('Start offline analysis: ')
-    plotting = int(input("Ignore POLiTAG (yes [0], no [1]: "))
+    # plotting = int(input("Ignore POLiTAG (yes [0], no [1]: "))
 
     for subj_ind in range(n_subject):
         subject_num = subj_ind+6
         print('Subject number: ' + str(subject_num))
 
         for electrode_type_ind in range(n_electrode_type): 
-            if plotting == 0:
-                electrode_type_ind = 0
-            else:
-                electrode_type_ind = 1
+            # if plotting == 0:
+            #     electrode_type_ind = 0
+            # else:
+            #     electrode_type_ind = 1
             electrode_type = ['Gel','POLiTAG'][electrode_type_ind]
             print('Electrode type: ' + str(electrode_type))
             ### debugging
@@ -82,9 +83,9 @@ if offline_analysis:
             
             # temporal filter parameters
             low_f_c = 4
-            high_f_c = 30#12
+            high_f_c = 12
             epoch_tmin = -0.3
-            epoch_tmax = 0.7         
+            epoch_tmax = 0.5         
             ch_picks = list(input("Choose importnat channels: ").replace(' ', '').split(','))
             n_cca_comp = len(ch_picks)
             preprocessing_param = {'low_f_c':low_f_c, 'high_f_c':high_f_c, 'epoch_tmin':epoch_tmin, 'epoch_tmax':epoch_tmax, 'n_cca_comp':n_cca_comp}
@@ -270,14 +271,15 @@ if offline_analysis:
                 freqs = np.logspace(*np.log10([1, 30]), num=180)
                 n_cycles = freqs / 2.  # different number of cycle per frequency
                 power, itc = mne.time_frequency.tfr_morlet(all_correct, freqs=freqs, n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=1, picks=ch_picks)
-                power.plot(baseline=(epoch_tmin, 0), combine='mean', mode='logratio', tmin=0, tmax=0.5, title='Correct: Average Power at '+ ' '.join(ch_picks))
+                power.plot(baseline=(epoch_tmin, 0.15), combine='mean', mode='logratio', tmin=0, tmax=0.6, title='Correct: Average Power Log-ratio at '+ ' '.join(ch_picks))
                 power, itc = mne.time_frequency.tfr_morlet(all_error, freqs=freqs, n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=1, picks=ch_picks)
-                power.plot(baseline=(epoch_tmin, 0), combine='mean', mode='logratio', tmin=0, tmax=0.5, title='Error: Average Power at '+ ' '.join(ch_picks))
+                power.plot(baseline=(epoch_tmin, 0.15), combine='mean', mode='logratio', tmin=0, tmax=0.6, title='Error: Average Power Log-ratio at '+ ' '.join(ch_picks))
 
             # grand average waveform + topoplot (all ch)
+            errp_picks = time_picks[subj_ind][electrode_type_ind]
             time_unit = dict(time_unit="s")
-            grand_avg_corr.plot_joint(title="Correct: Average Potentials", picks='eeg', ts_args=time_unit, topomap_args=time_unit)
-            grand_avg_err.plot_joint(title="Error: Average Potentials", picks='eeg',ts_args=time_unit, topomap_args=time_unit)  # show difference wave
+            grand_avg_corr.plot_joint(times=errp_picks, title="Correct: Average Potentials", picks='eeg', ts_args=time_unit, topomap_args=time_unit)
+            grand_avg_err.plot_joint(times=errp_picks, title="Error: Average Potentials", picks='eeg',ts_args=time_unit, topomap_args=time_unit)  # show difference wave
             if len(ch_picks)<2:
                 # grand average waveform
                 grand_avg_corr.plot(titles="Correct: Average Potentials at " + " ".join(ch_picks), picks=ch_picks,time_unit='s',gfp=False)
@@ -285,8 +287,8 @@ if offline_analysis:
             else:
                 # grand average waveform + topoplot (fc ch)
                 time_unit = dict(time_unit="s")
-                grand_avg_corr.plot_joint(title="Correct: Average Potentials at " + " ".join(ch_picks), picks=ch_picks, ts_args=time_unit, topomap_args=time_unit)
-                grand_avg_err.plot_joint(title="Error: Average Potentials at " + " ".join(ch_picks), picks=ch_picks,ts_args=time_unit, topomap_args=time_unit)  # show difference wave
+                grand_avg_corr.plot_joint(times=errp_picks, title="Correct: Average Potentials at " + " ".join(ch_picks), picks=ch_picks, ts_args=time_unit, topomap_args=time_unit)
+                grand_avg_err.plot_joint(times=errp_picks, title="Error: Average Potentials at " + " ".join(ch_picks), picks=ch_picks,ts_args=time_unit, topomap_args=time_unit)  # show difference wave
 
             
             
