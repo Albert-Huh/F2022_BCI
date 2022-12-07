@@ -79,7 +79,7 @@ class Filtering:
             mne.viz.plot_filter(h=filter_params, sfreq=self.sfreq, flim=(0.01, self.sfreq/2))
         return filt_raw
 
-    def external_artifact_rejection(self):
+    def external_artifact_rejection(self,phase):
         self.raw.load_data()
         self.raw = self.notch()
         filt_raw = self.bandpass(phase='minimum')

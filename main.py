@@ -45,7 +45,7 @@ offline_files, online1_files, online2_files, online_files = setup.get_file_paths
 # get international 10-20 montage
 montage = mne.channels.make_standard_montage('standard_1020')
 
-# plt.rcParams.update({'font.size': 20})
+plt.rcParams.update({'font.size': 20})
 
 ###### 2 Offline Analysis ######
 offline_analysis = True  # if we are not using CCA
@@ -82,13 +82,21 @@ if offline_analysis:
             
             # temporal filter parameters
             low_f_c = 4
-            high_f_c = 12
+            high_f_c = 30#12
             epoch_tmin = -0.3
-            epoch_tmax = 0.5
-            n_cca_comp = 5
-            preprocessing_param = {'low_f_c':low_f_c, 'high_f_c':high_f_c, 'epoch_tmin':epoch_tmin, 'epoch_tmax':epoch_tmax, 'n_cca_comp':n_cca_comp}
+            epoch_tmax = 0.7         
             ch_picks = list(input("Choose importnat channels: ").replace(' ', '').split(','))
+            n_cca_comp = len(ch_picks)
+            preprocessing_param = {'low_f_c':low_f_c, 'high_f_c':high_f_c, 'epoch_tmin':epoch_tmin, 'epoch_tmax':epoch_tmax, 'n_cca_comp':n_cca_comp}
+
             # spatial filter parameters
+            print(ch_picks)
+            bad_chs = None
+            if electrode_type == 'POLiTAG':
+                bad_chs = list(input("Choose BAD channels: ").replace(' ', '').split(','))
+                if bad_chs[0] == '':
+                    bad_chs = None
+                print(bad_chs)
             spat_filt = int(input("Spatial filtering setups (None [0], CAR [1], CCA [2], CAR+CCA [3]): "))
             if spat_filt==1 or spat_filt==3:
                 car_on = True
@@ -97,11 +105,8 @@ if offline_analysis:
             if spat_filt==2 or spat_filt==3:
                 cca_on = True
                 # build CCA using all runs
-                W_s = cca.canonical_correlation_analysis(runs, montage, preprocessing_param, ch_picks=ch_picks, electrode_type=electrode_type, reg_base_on=reg_base_on, car_on=car_on, show_components=True)
-                # choose representing CCA component as a sapatial filter
-                cca_num = list(input("Choose CCA components: ").split(','))
-                cca_num = [int(x) for x in cca_num]
-                # W_cca = W_s.T[cca_num]
+                W_s = cca.canonical_correlation_analysis(runs, montage, preprocessing_param, ch_picks=ch_picks, drop=bad_chs, electrode_type=electrode_type, reg_base_on=reg_base_on, car_on=car_on, combine=True, show_components=True)
+                ch_picks = list(input("Choose CCA filtered channels: ").replace(' ', '').split(','))
             else:
                 cca_on = False
 
@@ -114,23 +119,21 @@ if offline_analysis:
             for run in runs:
                 ### 2.2 import raw data ###
                 raw = setup.load_raw_data(path=run, montage=montage, electrode_type=electrode_type)
-
+                if bad_chs != None:
+                    raw.drop_channels(bad_chs)
                 ### 2.3 preprocessing ###
                 # apply notch (60, 120 Hz) and bandpass filter (1-30 Hz)
                 filters = preprocessing.Filtering(raw, l_freq=low_f_c, h_freq=high_f_c)
-                raw = filters.external_artifact_rejection()
+                raw = filters.external_artifact_rejection(phase='zero')
                 events, event_dict = setup.create_events(raw)
-
                 if car_on == True:
                     # common average reference (CAR)
                     raw = raw.set_eeg_reference('average')
                 if cca_on == True:
                     # apply CCA based spatial filter
-                    W_cca = cca.combine_cca_components(W_s, cca_num, raw.info)
-                    print(W_cca.shape)
-                    print(W_cca) # check the filter weights
-                    raw_cca = (raw.get_data().T * W_cca).T
+                    raw_cca = (raw.get_data().T * W_s).T
                     raw = mne.io.RawArray(raw_cca,raw.info)
+                    
 
                 ### 2.4 create epochs ###
                 # create epochs from MNE events
@@ -153,7 +156,7 @@ if offline_analysis:
             all_error = mne.concatenate_epochs(epochs_err)
             
             # ch_picks = ['FCz', 'FC1', 'FC2', 'Cz', 'Fz']
-            fc_chs = ['FCz', 'FC1', 'FC2', 'Cz', 'Fz']
+            # ch_picks = ['FCz', 'FC1', 'FC2', 'Cz', 'Fz']
             baseline = (epoch_tmin, 0)
             if reg_base_on == False:
                 all_correct = all_correct.apply_baseline(baseline)
@@ -162,7 +165,7 @@ if offline_analysis:
                 corr_predictor = all_epochs.events[:, 2] != all_epochs.event_id['Error trial']
                 err_predictor = all_epochs.events[:, 2] == all_epochs.event_id['Error trial']
                 baseline_predictor = (all_epochs.copy().crop(*baseline)
-                        .pick_channels(fc_chs)
+                        .pick_channels(ch_picks)
                         .get_data()     # convert to NumPy array
                         .mean(axis=-1)  # average across timepoints
                         .squeeze()      # only 1 channel, so remove singleton dimension
@@ -197,7 +200,7 @@ if offline_analysis:
                 corr_predictor = all_epochs.events[:, 2] != all_epochs.event_id['Error trial']
                 err_predictor = all_epochs.events[:, 2] == all_epochs.event_id['Error trial']
                 baseline_predictor = (all_epochs.copy().crop(*baseline)
-                        .pick_channels(fc_chs)
+                        .pick_channels(ch_picks)
                         .get_data()     # convert to NumPy array
                         .mean(axis=-1)  # average across timepoints
                         .squeeze()      # only 1 channel, so remove singleton dimension
@@ -216,12 +219,12 @@ if offline_analysis:
                                                     "baseline:Correct"])
 
                 effect_of_baseline = reg_model['baseline'].beta
-                effect_of_baseline.plot(picks=fc_chs, hline=[1.], units=dict(eeg=r'$\beta$ value'),
-                            titles=dict(eeg=fc_chs), selectable=False)
+                effect_of_baseline.plot(picks=ch_picks, hline=[1.], units=dict(eeg=r'$\beta$ value'),
+                            titles=dict(eeg=ch_picks), selectable=False)
 
                 reg_corr = reg_model['Correct'].beta
                 reg_err = reg_model['ErrP'].beta
-                kwargs = dict(picks=fc_chs, show_sensors=False, truncate_yaxis=False)
+                kwargs = dict(picks=ch_picks, show_sensors=False, truncate_yaxis=False)
                 mne.viz.plot_compare_evokeds(dict(Correct=trad_corr, ErrP=trad_err),
                                             title="Traditional", **kwargs, combine='mean')
                 mne.viz.plot_compare_evokeds(dict(Correct=reg_corr, ErrP=reg_err),
@@ -264,24 +267,26 @@ if offline_analysis:
             ### 2.5 analysis visulaization ###
             # time-frequency plot
             if high_f_c >= 30:
-                freqs = np.logspace(*np.log10([1, 30]), num=160)
+                freqs = np.logspace(*np.log10([1, 30]), num=180)
                 n_cycles = freqs / 2.  # different number of cycle per frequency
-                power, itc = mne.time_frequency.tfr_morlet(all_correct, freqs=freqs, n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=1, picks='eeg')
-                power.plot(baseline=(epoch_tmin, 0), combine='mean', mode='logratio', title='Correct Epoch Average Frontal Central Power')
-                power, itc = mne.time_frequency.tfr_morlet(all_error, freqs=freqs, n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=1, picks='eeg')
-                power.plot(baseline=(epoch_tmin, 0), combine='mean', mode='logratio', title='ErrP Epoch Average Frontal Central Power')
+                power, itc = mne.time_frequency.tfr_morlet(all_correct, freqs=freqs, n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=1, picks=ch_picks)
+                power.plot(baseline=(epoch_tmin, 0), combine='mean', mode='logratio', tmin=0, tmax=0.5, title='Correct: Average Power at '+ ' '.join(ch_picks))
+                power, itc = mne.time_frequency.tfr_morlet(all_error, freqs=freqs, n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=1, picks=ch_picks)
+                power.plot(baseline=(epoch_tmin, 0), combine='mean', mode='logratio', tmin=0, tmax=0.5, title='Error: Average Power at '+ ' '.join(ch_picks))
 
-            # # grand average waveform
-            # grand_avg_corr.plot(titles="Correct: Average Potentials", picks='eeg',time_unit='s',gfp=False)
-            # grand_avg_err.plot(titles="Error: Average Potentials", picks='eeg',time_unit='s',gfp=False)  # show difference wave
             # grand average waveform + topoplot (all ch)
             time_unit = dict(time_unit="s")
             grand_avg_corr.plot_joint(title="Correct: Average Potentials", picks='eeg', ts_args=time_unit, topomap_args=time_unit)
             grand_avg_err.plot_joint(title="Error: Average Potentials", picks='eeg',ts_args=time_unit, topomap_args=time_unit)  # show difference wave
-            # grand average waveform + topoplot (fc ch)
-            time_unit = dict(time_unit="s")
-            grand_avg_corr.plot_joint(title="Correct: Average Potentials at Frontal Central Channels", picks=fc_chs, ts_args=time_unit, topomap_args=time_unit)
-            grand_avg_err.plot_joint(title="Error: Average Potentials at Frontal Central Channels", picks=fc_chs,ts_args=time_unit, topomap_args=time_unit)  # show difference wave
+            if len(ch_picks)<2:
+                # grand average waveform
+                grand_avg_corr.plot(titles="Correct: Average Potentials at " + " ".join(ch_picks), picks=ch_picks,time_unit='s',gfp=False)
+                grand_avg_err.plot(titles="Error: Average Potentials at " + " ".join(ch_picks), picks=ch_picks,time_unit='s',gfp=False)  # show difference wave
+            else:
+                # grand average waveform + topoplot (fc ch)
+                time_unit = dict(time_unit="s")
+                grand_avg_corr.plot_joint(title="Correct: Average Potentials at " + " ".join(ch_picks), picks=ch_picks, ts_args=time_unit, topomap_args=time_unit)
+                grand_avg_err.plot_joint(title="Error: Average Potentials at " + " ".join(ch_picks), picks=ch_picks,ts_args=time_unit, topomap_args=time_unit)  # show difference wave
 
             
             
@@ -290,7 +295,7 @@ if offline_analysis:
             vmax = max(grand_avg_corr.get_data().max(),
                     grand_avg_err.get_data().max()) * 1e6
             topo_kwargs = dict(vlim=(vmin, vmax), ch_type='eeg',
-                            times=np.linspace(0.05, 0.45, 9))
+                            times=np.linspace(0.20, 0.36, 9))
 
             # grand average topoplots
             fig = plt.figure(constrained_layout=True)
@@ -311,8 +316,8 @@ if offline_analysis:
             # evokeds = dict(Correct=grand_avg_corr, ErrP=grand_avg_err) # mean only
             evokeds = dict(Correct=list(all_correct.iter_evoked()), # mean and variance
                 ErrP=list(all_error.iter_evoked()))
-            mne.viz.plot_compare_evokeds(evokeds, picks='FCz', combine='mean')
-            mne.viz.plot_compare_evokeds(evokeds, picks=fc_chs, combine='mean')
+            # mne.viz.plot_compare_evokeds(evokeds, picks='FCz', combine='mean')
+            mne.viz.plot_compare_evokeds(evokeds, picks=ch_picks, combine='mean')
 
             '''
             ### 2.6 create training data ###

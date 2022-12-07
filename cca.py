@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.cross_decomposition import CCA
 
-def canonical_correlation_analysis(run_paths, montage, preprocessing_param, ch_picks=['FCz', 'FC1', 'FC2', 'Cz', 'Fz'], electrode_type='Gel', reg_base_on=False, car_on=False, show_components=True):
+def canonical_correlation_analysis(run_paths, montage, preprocessing_param, ch_picks=['FCz', 'FC1', 'FC2', 'Cz', 'Fz'], drop=None, electrode_type='Gel', reg_base_on=False, car_on=False, combine=False,show_components=True):
     '''
     run_paths = list of file pathes (str) for raw EEG data (Brain Vision)
     montage = MNE montage file
@@ -21,10 +21,11 @@ def canonical_correlation_analysis(run_paths, montage, preprocessing_param, ch_p
     for run in run_paths:
         #import raw data
         raw = setup.load_raw_data(path=run, montage=montage, electrode_type=electrode_type)
-
+        if drop != None:
+            raw.drop_channels(drop)
         # apply notch (60, 120 Hz) and bandpass filter (1-40 Hz)
         filters = preprocessing.Filtering(raw, l_freq=preprocessing_param['low_f_c'], h_freq=preprocessing_param['high_f_c'])
-        raw = filters.external_artifact_rejection()
+        raw = filters.external_artifact_rejection(phase='zero')
 
         if car_on == True:
             # common average reference (CAR)
@@ -110,17 +111,40 @@ def canonical_correlation_analysis(run_paths, montage, preprocessing_param, ch_p
 
     if show_components == True:
         # visulaize CCA components
+        vmin = W_s.min()
+        vmax = W_s.max()
+            
         fig, axs = plt.subplots(nrows=1, ncols=preprocessing_param['n_cca_comp'])
-        for i in range(preprocessing_param['n_cca_comp']-1):
-                mne.viz.plot_topomap(W_s.T[i], raw.info, axes=axs[i], size=3,vlim=(0, 1), show=False)
-        im, cn = mne.viz.plot_topomap(W_s.T[preprocessing_param['n_cca_comp']-1], raw.info, axes=axs[preprocessing_param['n_cca_comp']-1], size=3, vlim=(-1, 1), show=False)
-        cbar = plt.colorbar(im, ax=axs)
-        tick_font_size = 22
-        cbar.ax.tick_params(labelsize=tick_font_size)
-        cbar.set_label('Weight (A.U.)',fontsize=22)
-        plt.rcParams.update({'font.size': 20})
-        fig.suptitle('CCA Components',fontsize=40)
-        plt.show()
+        if preprocessing_param['n_cca_comp'] > 1:
+            for i in range(preprocessing_param['n_cca_comp']-1):
+                mne.viz.plot_topomap(W_s.T[i], raw.info, axes=axs[i], size=3,vlim=(-1, 1), vmin=vmin, vmax=vmax, show=False)
+            im, cn = mne.viz.plot_topomap(W_s.T[preprocessing_param['n_cca_comp']-1], raw.info, axes=axs[preprocessing_param['n_cca_comp']-1], size=3, vlim=(-1, 1), vmin=vmin, vmax=vmax, show=False)
+            cbar = plt.colorbar(im, ax=axs)
+            tick_font_size = 22
+            cbar.ax.tick_params(labelsize=tick_font_size)
+            cbar.set_label('Weight (A.U.)',fontsize=22)
+            plt.rcParams.update({'font.size': 20})
+            fig.suptitle('CCA Components',fontsize=40)
+            plt.show()
+        else:
+            im, cn = mne.viz.plot_topomap(W_s.T[0], raw.info, axes=axs, size=3,vlim=(-1, 1), vmin=vmin, vmax=vmax, show=False)
+            cbar = plt.colorbar(im, ax=axs)
+            tick_font_size = 22
+            cbar.ax.tick_params(labelsize=tick_font_size)
+            cbar.set_label('Weight (A.U.)',fontsize=22)
+            plt.rcParams.update({'font.size': 20})
+            fig.suptitle('CCA Components',fontsize=40)
+            plt.show()
+
+
+    if combine==True:
+        # choose representing CCA component as a sapatial filter
+        cca_num = list(input("Choose CCA component(s): ").split(','))
+        cca_num = [int(x) for x in cca_num]
+        W_cca = combine_cca_components(W_s, cca_num, raw.info)
+        print(W_cca.shape)
+        print(W_cca) # check the filter weights
+        W_s = W_cca
 
     return W_s
 
