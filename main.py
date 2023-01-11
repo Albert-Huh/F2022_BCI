@@ -170,8 +170,8 @@ if offline_analysis:
                         .get_data()     # convert to NumPy array
                         .mean(axis=-1)  # average across timepoints
                         .squeeze()      # only 1 channel, so remove singleton dimension
-                        .mean(axis=-1)  # average across channels
-                        .squeeze()      # only 1 channel, so remove singleton dimension
+                        # .mean(axis=-1)  # average across channels
+                        # .squeeze()      # only 1 channel, so remove singleton dimension
                 )
                 baseline_predictor *= 1e6  # convert V → μV
 
